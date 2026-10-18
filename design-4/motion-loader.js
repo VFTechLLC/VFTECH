@@ -31,8 +31,6 @@
     }
   }
   function state() {
-    if (reduce.matches) return 'reduced';
-    if (navigator.connection && navigator.connection.saveData) return 'data-saver';
     if (root.classList.contains('motion-paused')) return 'paused';
     if (document.hidden) return 'hidden';
     return 'active';

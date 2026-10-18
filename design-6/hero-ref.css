@@ -112,3 +112,18 @@ body .hero.hero--ref .hero-figure{grid-area:fig;position:relative;justify-self:e
   .site-head .nav ul{height:auto}
   .theme-btn,.menu-btn{display:none}
 }
+
+/* home hero background image: above the studio light, beneath the floor, rays, dust and 3D mark.
+   Depth of field: a blurred copy fades in toward the horizon, so near cubes stay sharp and far ones soften. */
+.hero--ref .hero-photo{position:absolute;inset:0;overflow:hidden;background:url("assets/hero-bg.webp") 50% 62%/cover no-repeat;
+  filter:grayscale(1) sepia(.9) hue-rotate(163deg) saturate(1.1) brightness(.8) contrast(1.05)}
+.hero--ref .hero-photo::before{content:"";position:absolute;inset:-24px;background:inherit;filter:blur(7px);
+  -webkit-mask-image:linear-gradient(to bottom,#000 0%,#000 38%,transparent 72%);mask-image:linear-gradient(to bottom,#000 0%,#000 38%,transparent 72%)}
+.hero--ref .hero-photo::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgb(12 16 19/.85) 0%,rgb(12 16 19/.7) 35%,rgb(12 16 19/0) 60%),linear-gradient(180deg,rgb(12 16 19/.6) 0%,rgb(12 16 19/.3) 45%,rgb(12 16 19/.6) 85%,rgb(12 16 19) 100%)}
+/* the cube logos glow: a thresholded copy keeps only the bright marks, blooms them and breathes slowly */
+.hero--ref .hero-photo-glow{position:absolute;inset:0;background:inherit;mix-blend-mode:screen;opacity:.08;z-index:1;
+  filter:grayscale(1) brightness(1.1) contrast(6) blur(1.5px) drop-shadow(0 0 6px rgb(140 198 230)) drop-shadow(0 0 14px rgb(45 98 130));
+  animation:cube-glow 5.5s ease-in-out infinite}
+@keyframes cube-glow{50%{opacity:.55}}
+.motion-paused .hero--ref .hero-photo-glow{animation-play-state:paused}
+.hero--ref .hero-sub{color:#D3DCE0;text-shadow:0 1px 2px rgb(12 16 19/.9),0 0 18px rgb(12 16 19/.8)}

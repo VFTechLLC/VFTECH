@@ -22,9 +22,6 @@ html.lenis, html.lenis body { height:auto; }
 .vf-card-active>.vf-border-beam>i { animation:vf-border-travel 2.4s linear 1; }
 @keyframes vf-border-travel { to { offset-distance:100%; } }
 .motion-paused .vf-spotlight,.motion-paused .vf-border-beam,.motion-paused .vf-spotlight-glow { display:none; }
-@media (prefers-reduced-motion:reduce) {
-  .vf-spotlight,.vf-border-beam,.vf-spotlight-glow { display:none; }
-}
 @media print { .vf-spotlight,.vf-border-beam,.vf-spotlight-glow { display:none; } }
 .ds-popup .ds-motion-replay { display:block;width:100%;min-height:44px;padding:11px 10px;border:1px solid #3a4048;border-radius:10px;background:#1e242b;color:#f4f5f7;text-align:left;font:600 13px/1.4 system-ui,sans-serif;cursor:pointer; }
 .ds-popup .ds-motion-replay:disabled { color:#b4bbc4;cursor:default; }
