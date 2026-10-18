@@ -24,6 +24,20 @@ for n in 2 3 4 5 6 7 8 9 10; do
          "_site/design-$n/404.html" "_site/design-$n/robots.txt" "_site/design-$n/sitemap.xml"
 done
 
+# design 1 used to live at /design-1/; keep old links working by forwarding each page to the root.
+mkdir -p _site/design-1
+for f in site/*.html; do
+  page=$(basename "$f"); [ "$page" = 404.html ] && continue
+  target="../$page"; [ "$page" = index.html ] && target="../"
+  cat > "_site/design-1/$page" <<HTML
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>VFTech</title>
+<meta name="robots" content="noindex"><link rel="canonical" href="$target">
+<meta http-equiv="refresh" content="0; url=$target">
+<script>location.replace("$target"+location.search+location.hash)</script></head>
+<body><p>This page has moved: <a href="$target">continue to VFTech</a>.</p></body></html>
+HTML
+done
+
 find _site -name '*.html' -exec sed -i -E \
   's#(href|src)="((\.\./)?(styles\.css|site\.js|motion-loader\.js|motion\.css|assets/motion-suite\.js|guide-engine\.js|guide-knowledge\.js|guide-widget\.js|guide-widget\.css|services-config\.js|service-catalog\.js|services\.css|services\.js|feature-showcase\.js|hero-intro\.js|hero-depth\.js|schematic\.js|compare\.css|compare\.js|remix\.css|fonts\.css|typography\.css|layout\.css|hero-ref\.css|chrome-loader\.js|extras\.js|extras\.css|saas\.css|ledger\.css|console\.css|pulse\.css|mono\.css|switcher\.css|switcher\.js|signature\.css|signature\.js|showcase\.js|ledger\.js|console\.js|pulse\.js|mono\.js|logo-motion\.js|assets/chrome-hero\.js))"#\1="\2?v='"$STAMP"'"#g' {} +
 
