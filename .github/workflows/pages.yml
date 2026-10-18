@@ -1,77 +1,53 @@
-# Publishes design-3/ at the site root, with site/ (design 1) at /design-1/, design-2/ at /design-2/ and design-4/ at /design-4/ and design-5/ to design-10/ at /design-N/, to GitHub Pages on every push to main.
-# One-time setup: repository Settings → Pages → Build and deployment → Source: "GitHub Actions".
-name: Deploy site to GitHub Pages
+# Publishes the assembled site to the live repo iamabotama/vftech.io (served by GitHub Pages)
+# after "Site checks" passes on main. design-3/ is the site root; site/ (design 1), design-2/
+# and design-4/ to design-10/ publish at /design-N/, exactly as scripts/assemble.sh builds them.
+#
+# One-time setup:
+#   1. In iamabotama/vftech.io: Settings → Deploy keys → add the public key, "Allow write access".
+#   2. In iamabotama/VFTECH: Settings → Secrets and variables → Actions → secret LIVE_DEPLOY_KEY
+#      = the matching private key.
+#   3. In iamabotama/vftech.io: Settings → Pages → Source: "Deploy from a branch", branch main, / (root).
+name: Deploy to live site (vftech.io)
 
 on:
-  push:
+  workflow_run:
+    workflows: ["Site checks"]
+    types: [completed]
     branches: [main]
-    paths: ['site/**', 'design-2/**', 'design-3/**', 'design-4/**', 'design-5/**', 'design-6/**', 'design-7/**', 'design-8/**', 'design-9/**', 'design-10/**', 'scripts/assemble.sh', '.github/workflows/pages.yml']
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: pages
+  group: live-deploy
   cancel-in-progress: false
 
 jobs:
-  build:
+  deploy:
+    # Manual runs always deploy; automatic runs only when checks passed on a push to main.
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pages: write
-    outputs:
-      artifact_name: ${{ steps.artifact-name.outputs.name }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/configure-pages@v5
+        with:
+          # Deploy the exact commit the checks ran against.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
       - name: Assemble all ten designs
         run: bash scripts/assemble.sh ${{ github.run_number }}
-      - name: Name this build artifact
-        id: artifact-name
-        run: echo "name=github-pages-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: _site
-          name: ${{ steps.artifact-name.outputs.name }}
 
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    env:
-      PAGES_ARTIFACT: ${{ needs.build.outputs.artifact_name }}
-    steps:
-      # Artifact metadata can lag behind upload completion. A deploy-only retry
-      # reuses this build output instead of uploading duplicate artifacts.
-      - name: Wait for the uploaded artifact
-        uses: actions/github-script@v8
+      - name: Push to iamabotama/vftech.io
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          script: |
-            const name = process.env.PAGES_ARTIFACT;
-            for (let attempt = 0; attempt < 15; attempt++) {
-              const { data } = await github.rest.actions.listWorkflowRunArtifacts({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                run_id: context.runId,
-                name,
-                per_page: 100
-              });
-              const matches = data.artifacts.filter(a => a.name === name && !a.expired);
-              if (matches.length === 1) return;
-              if (matches.length > 1) throw new Error('Build artifact name is not unique.');
-              core.info('Waiting for Pages artifact metadata.');
-              await new Promise(resolve => setTimeout(resolve, 2000));
-            }
-            throw new Error('The uploaded Pages artifact is not visible yet. Retry the deploy job.');
-      - id: deployment
-        uses: actions/deploy-pages@v4
-        with:
-          artifact_name: ${{ needs.build.outputs.artifact_name }}
+          deploy_key: ${{ secrets.LIVE_DEPLOY_KEY }}
+          external_repository: iamabotama/vftech.io
+          publish_branch: main
+          publish_dir: ./_site
+          # cname: vftech.io   # uncomment if vftech.io is the custom domain
+          user_name: vftech-deploy[bot]
+          user_email: vftech-deploy@users.noreply.github.com
+          full_commit_message: "Deploy VFTECH@${{ github.event.workflow_run.head_sha || github.sha }}"
