@@ -1,4 +1,4 @@
-# The main site is design 3 at the root. /design-1/, /design-2/, /design-4/ and /design-5/ are
+# The main site is design 1 at the root. /design-2/ to /design-10/ are
 # alternate designs of the same pages; they carry noindex and point their canonical links here.
 User-agent: *
 Allow: /

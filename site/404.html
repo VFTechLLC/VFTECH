@@ -1,70 +1,25 @@
 <!doctype html>
 <html lang="en" data-page="index.html">
 <head>
+<meta charset="utf-8">
 <base href="/VFTECH/">
 <meta name="robots" content="noindex">
-<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Page not found · VFTech</title>
-<meta name="description" content="Book a free 30-minute conversation with VFTech: what’s broken, what it’s costing you, and whether this is the right firm for it. Email, phone, or a short request form.">
+<meta name="description" content="The page you were looking for isn’t here. Everything on the VFTech site is one click from this page.">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <script>try{var t=localStorage.getItem('vftech-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
 <link rel="stylesheet" href="styles.css">
-<style>
-/* contact.html only (Sheet 07). Tokens and φ/Fibonacci values only. */
-
-/* page head: what the 30 minutes cover, keyed like the general notes */
-.agenda ul{list-style:none;margin:0;padding:0;border-top:2px solid var(--ink)}
-.agenda li{display:flex;gap:var(--s3);align-items:baseline;padding-block:var(--s2);border-bottom:1px solid var(--rule-strong);font:560 var(--t1)/1.3 var(--f-display);font-stretch:108%;letter-spacing:-.01em}
-.agenda li::before{content:"";flex:none;width:9px;height:7.79px;background:var(--ink);clip-path:polygon(0 0,100% 0,50% 100%);transform:translateY(-.2em)}
-
-/* the booking section: details left, form right; on one column the form comes before the next steps */
-.book-grid{grid-template-areas:"intro form" "next form";grid-template-rows:auto 1fr;row-gap:var(--s6)}
-.book-intro{grid-area:intro}
-.book-next{grid-area:next}
-.book-main{grid-area:form}
-@media (max-width:900px){.book-grid{grid-template-areas:"intro" "form" "next";grid-template-rows:none}}
-
-/* contact details as a title block: label in the corner of each cell, value below */
-.tblk{margin:var(--s5) 0 0;border:1px solid var(--ink)}
-.tblk > div{position:relative;padding:var(--s3) var(--s4) var(--s4);border-bottom:1px solid var(--rule-strong)}
-.tblk > div:last-child{border-bottom:0}
-.tblk dt{font:500 var(--t-1)/1.5 var(--f-note);letter-spacing:.06em;text-transform:uppercase;color:var(--blueline)}
-.tblk dd{margin:var(--s2) 0 0;display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2) var(--s3);font:560 var(--t1)/1.3 var(--f-display);font-stretch:108%}
-.tblk .copyline code{font-size:var(--t1);line-height:1.3}
-.tblk .ph{position:absolute;top:var(--s3);right:var(--s4)} /* a revision tag in the corner of the cell */
-
-/* what happens next: the first three of the seven steps */
-.book-next h3{font-size:var(--t2);font-stretch:110%;line-height:1.2}
-.next{list-style:none;margin:var(--s4) 0 0;padding:0;border-top:2px solid var(--ink)}
-.next li{display:grid;gap:var(--s1);padding-block:var(--s3) var(--s4);border-bottom:1px solid var(--rule-strong)}
-.next strong{font:600 var(--t1)/1.25 var(--f-display);font-stretch:108%;letter-spacing:-.01em}
-.next p{color:var(--graphite)}
-.book-next .textlink{margin-top:var(--s4)}
-
-/* the form */
-.book-main .form{border-top:2px solid var(--ink);padding-top:var(--s5)}
-.req{margin-left:var(--s2);font:500 var(--t-2)/1 var(--f-note);letter-spacing:.08em;text-transform:uppercase;color:var(--blueline);vertical-align:.15em}
-fieldset.field legend{padding:0;margin-bottom:var(--s2)}
-.choices label:has(input:checked){border-color:var(--ink)}
-.submit-row{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s4) var(--s5);margin-top:var(--s3)}
-.submit-row .hint{max-width:22em;color:var(--graphite);font-size:15px;line-height:1.5}
-button.cta{-webkit-appearance:none;appearance:none;margin:0;border:0;background:none;cursor:pointer;text-align:left}
-.form-out{margin-top:var(--s5)}
-.form-out h2{font-size:var(--t1);font-stretch:108%;line-height:1.25}
-.form-out h2 + p{margin-top:var(--s2);color:var(--graphite)}
-.form-out h2 + p strong{color:var(--ink);font-weight:600}
-</style>
 <link rel="stylesheet" href="fonts.css">
 <link rel="stylesheet" href="typography.css">
 <link rel="stylesheet" href="layout.css">
 <link rel="stylesheet" href="extras.css">
-<link rel="stylesheet" href="switcher.css">
 <link rel="stylesheet" href="signature.css">
 <link rel="stylesheet" href="guide-widget.css">
 <link rel="stylesheet" href="services.css">
+<link rel="stylesheet" href="motion.css">
 </head>
-<body class="layout-design-3">
+<body class="layout-drafting">
 <a class="skip" href="#main">Skip to content</a>
 
 <header class="site-head">
@@ -93,7 +48,7 @@ button.cta{-webkit-appearance:none;appearance:none;margin:0;border:0;background:
   </div>
 </header>
 
-<main id="main">
+<main id="main" tabindex="-1">
   <section class="page-head" aria-labelledby="page-title">
     <div class="wrap page-head-grid">
       <div>
@@ -151,13 +106,11 @@ button.cta{-webkit-appearance:none;appearance:none;margin:0;border:0;background:
     <div class="foot-meta">
       <span>© 2026 VFTech</span>
       <span>Your code, your accounts, your documentation.</span>
-      <button class="motion-btn" type="button">Pause motion</button>
     </div>
   </div>
 </footer>
 <script src="site.js"></script>
 <script src="extras.js"></script>
-<script src="switcher.js"></script>
 <script src="signature.js"></script>
 <script src="services-config.js" defer></script>
 <script src="service-catalog.js" defer></script>
@@ -165,5 +118,6 @@ button.cta{-webkit-appearance:none;appearance:none;margin:0;border:0;background:
 <script src="guide-knowledge.js" defer></script>
 <script src="guide-widget.js" defer></script>
 <script src="services.js" defer></script>
+<script src="motion-loader.js" defer data-vf-motion-suite data-motion-options="{&quot;name&quot;:&quot;Drafting&quot;,&quot;distance&quot;:12,&quot;duration&quot;:0.48,&quot;stagger&quot;:0.03,&quot;magnet&quot;:2,&quot;beam&quot;:false}"></script>
 </body>
 </html>

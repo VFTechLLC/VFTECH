@@ -85,7 +85,7 @@ async function accessible(page){
   assert.deepEqual(result.violations.map(v=>({id:v.id,targets:v.nodes.map(n=>n.target)})),[]);
 }
 try{
-  for(const [design,directory] of [[3,''],[1,'design-1/']]){
+  for(const [design,directory] of [[1,''],[3,'design-3/']]){
     const url=origin+base+directory+'index.html';
     for(const [width,height] of views)await check('design '+design+' @'+width+'×'+height,
       {viewport:{width,height},hasTouch:width<1101},async page=>{

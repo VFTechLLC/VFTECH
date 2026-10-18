@@ -17,7 +17,7 @@ let views=0;
 async function make(options){const context=await browser.newContext(options);await context.route(url=>!url.href.startsWith(origin),route=>route.abort());return context;}
 try{
  for(const n of selected){
-  const prefix=n===3?'':`design-${n}/`,url=origin+base+prefix+'features.html';
+  const prefix=n===1?'':`design-${n}/`,url=origin+base+prefix+'features.html';
   for(const [width,height,touch] of [[1440,900,false],[320,844,true],[844,390,true]]){
    const context=await make({viewport:{width,height},hasTouch:touch,reducedMotion:'no-preference'}),page=await context.newPage(),errors=[];
    page.on('pageerror',error=>errors.push(error.message));

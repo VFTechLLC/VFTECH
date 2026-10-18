@@ -31,7 +31,7 @@ async function settled(page){
 }
 try{
  for(const n of selected){
-  const prefix=n===3?'':'design-'+n+'/',url=origin+base+prefix+'index.html';
+  const prefix=n===1?'':'design-'+n+'/',url=origin+base+prefix+'index.html';
   for(const [width,height,touch] of [[1440,900,false],[320,844,true],[782,844,true]]){
    const context=await make({viewport:{width,height},hasTouch:touch,reducedMotion:'no-preference'});
    await context.addInitScript(()=>{

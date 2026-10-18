@@ -21,7 +21,7 @@ const server = http.createServer(async (req, res) => {
 await new Promise(r => server.listen(0, r));
 const ORIGIN = `http://localhost:${server.address().port}${BASE}`;
 
-const CARDS = [['', 'design-3'], ['design-1/', 'site'], ['design-2/', 'design-2'], ['design-4/', 'design-4'], ['design-5/', 'design-5'], ['design-6/', 'design-6'], ['design-7/', 'design-7'], ['design-8/', 'design-8'], ['design-9/', 'design-9'], ['design-10/', 'design-10']];
+const CARDS = [['', 'site'], ['design-3/', 'design-3'], ['design-2/', 'design-2'], ['design-4/', 'design-4'], ['design-5/', 'design-5'], ['design-6/', 'design-6'], ['design-7/', 'design-7'], ['design-8/', 'design-8'], ['design-9/', 'design-9'], ['design-10/', 'design-10']];
 const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const ONLY = process.env.ONLY ? process.env.ONLY.split(',') : null;   // e.g. ONLY=design-6,design-7
 for (const [url, out] of CARDS.filter(([, o]) => !ONLY || ONLY.includes(o))) {

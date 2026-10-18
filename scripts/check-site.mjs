@@ -17,7 +17,7 @@ const ROOT = path.resolve('_site');
 const BASE = '/VFTECH/';                      // served under the same prefix as GitHub Pages
 const OUT = path.resolve('checks-out');
 const PAGES = ['index.html', 'websites.html', 'ai.html', 'advisory.html', 'process.html', 'about.html', 'contact.html'];
-const DESIGNS = [['3', ''], ['1', 'design-1/'], ['2', 'design-2/'], ['4', 'design-4/'], ['5', 'design-5/'], ['6', 'design-6/'], ['7', 'design-7/'], ['8', 'design-8/'], ['9', 'design-9/'], ['10', 'design-10/']];
+const DESIGNS = [['1', ''], ['3', 'design-3/'], ['2', 'design-2/'], ['4', 'design-4/'], ['5', 'design-5/'], ['6', 'design-6/'], ['7', 'design-7/'], ['8', 'design-8/'], ['9', 'design-9/'], ['10', 'design-10/']];
 const ONLY = process.env.ONLY ? process.env.ONLY.split(',') : null;   // e.g. ONLY=9,10 to check just those designs
 const VIEWPORTS = [[1440, 900], [390, 844]];
 const TYPES = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.jpg': 'image/jpeg',

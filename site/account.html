@@ -6,14 +6,13 @@
 <title>Customer account · VFTech</title>
 <meta name="description" content="Create a VFTech customer account or sign in with an email verification code when live delivery is enabled.">
 <link rel="canonical" href="https://dogecoin87.github.io/VFTECH/account.html">
-<meta name="robots" content="noindex, follow">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="VFTech">
 <meta property="og:title" content="Customer account · VFTech">
 <meta property="og:description" content="Create a VFTech customer account or sign in with an email verification code when live delivery is enabled.">
-<meta property="og:url" content="https://dogecoin87.github.io/VFTECH/design-1/account.html">
-<meta property="og:image" content="https://dogecoin87.github.io/VFTECH/design-1/social/vftech-card.jpg">
+<meta property="og:url" content="https://dogecoin87.github.io/VFTECH/account.html">
+<meta property="og:image" content="https://dogecoin87.github.io/VFTECH/social/vftech-card.jpg">
 <meta property="og:image:type" content="image/jpeg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -21,7 +20,7 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Customer account · VFTech">
 <meta name="twitter:description" content="Create a VFTech customer account or sign in with an email verification code when live delivery is enabled.">
-<meta name="twitter:image" content="https://dogecoin87.github.io/VFTECH/design-1/social/vftech-card.jpg">
+<meta name="twitter:image" content="https://dogecoin87.github.io/VFTECH/social/vftech-card.jpg">
 <script>try{var t=localStorage.getItem('vftech-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
 <link rel="stylesheet" href="styles.css">
 
@@ -66,7 +65,7 @@
 <main id="main" tabindex="-1" class="vfs-main"><div class="vfs-shell"><nav class="vfs-subnav" aria-label="Features and customer services"><a href="features.html">Features</a><a href="features.html#prices">Pricing</a><a href="account.html" aria-current="page">Customer account</a></nav><section class="vfs-intro"><span class="vfs-kicker">Customer portal</span><h1>Your work. Your account.</h1><p>Sign in with a short-lived email verification code. New customers create an account by verifying their email; no password is stored.</p></section>
 <div class="vfs-account-layout"><section class="vfs-card" aria-labelledby="vf-account-title"><h2 id="vf-account-title">Create an account or sign in</h2><p id="vf-service-status" class="vfs-status" role="status">Live account creation is not enabled yet. Email delivery and verification services still need configuration.</p><form id="vf-account-form" class="vfs-form"><label for="vf-name">Your name <span class="vfs-small">(optional for returning customers)</span></label><input id="vf-name" name="name" autocomplete="name" maxlength="80"><label for="vf-email">Email address</label><input id="vf-email" name="email" type="email" autocomplete="email" required maxlength="254"><div id="vf-account-captcha"></div><button class="vfs-button" type="submit" disabled>Send verification code</button></form>
 <form id="vf-code-form" class="vfs-form" hidden><label for="vf-code">Verification code</label><input id="vf-code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6" required><p class="vfs-small">Enter the six-digit code from your email. It expires after ten minutes.</p><button class="vfs-button" type="submit">Verify and sign in</button><button class="vfs-link" type="button" id="vf-change-email">Use a different email</button></form>
-<div id="vf-account-home" hidden><p id="vf-profile"></p><h3>Your submitted requests</h3><div id="vf-requests"></div><button class="vfs-button vfs-secondary" id="vf-logout" type="button">Sign out</button></div><p class="vfs-small">Until live services are enabled, you can <a href="../design-6/index.html?demo=acct#showcase">try the simulated account preview</a>.</p></section>
+<div id="vf-account-home" hidden><p id="vf-profile"></p><h3>Your submitted requests</h3><div id="vf-requests"></div><button class="vfs-button vfs-secondary" id="vf-logout" type="button">Sign out</button></div><p class="vfs-small">Until live services are enabled, you can <a href="design-6/index.html?demo=acct#showcase">try the simulated account preview</a>.</p></section>
 <section id="account-how" class="vfs-callout" data-vf-record="guide-accounts" data-vf-tags="account create sign login register verification email code captcha secure"><span class="vfs-kicker">How it works</span><h2>A code instead of a password.</h2><p>Email delivery and the backend must be configured before live account creation is enabled. Once enabled, enter your email and complete CAPTCHA verification. A six-digit code expires after ten minutes and can be used once. Verifying it creates your customer account or signs you into an existing one. The portal shows only requests submitted with your verified email address.</p><p>Account sessions use a private browser cookie. Signing out ends your session. The public demos use sample identities and do not create real accounts, activate paid plans or process payments.</p><a class="vfs-link" href="contact.html">Prepare a project request ↗</a></section></div></div></main>
 
 <footer class="site-foot">

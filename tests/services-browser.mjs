@@ -20,7 +20,7 @@ try{
     page.on('pageerror',e=>errors.push(e.message));
     page.on('response',response=>{if(response.url().startsWith(origin)&&response.status()>=400)errors.push(`${response.status()} ${response.url()}`);});
     await page.route(url=>!url.href.startsWith(origin),route=>route.abort());
-    const prefix=n===3?'':`design-${n}/`;
+    const prefix=n===1?'':`design-${n}/`;
     await page.goto(`${origin}${base}${prefix}features.html`);await page.waitForSelector('#vfg-launch');
     assert.deepEqual(await page.evaluate(()=>Array.from(document.querySelectorAll('body *')).filter(el=>{const r=el.getBoundingClientRect();return r.width>0&&r.right>innerWidth+1&&getComputedStyle(el).position!=='fixed';}).map(el=>({tag:el.tagName,cls:el.className,id:el.id,right:Math.round(el.getBoundingClientRect().right)})).slice(0,12)),[],`features ${n} ${width} overflow`);
     await page.click('[data-vfs-range="30"]');assert.match(await page.locator('#vfs-chart-label').textContent(),/30 days/);
