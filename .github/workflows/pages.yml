@@ -1,8 +1,8 @@
 # Publishes the assembled site to the live repo iamabotama/vftech.io (served by GitHub Pages)
 # after "Site checks" passes on main. site/ (design 1) is the site root; design-2/ to design-10/
 # publish at /design-N/ as noindexed alternates, exactly as scripts/assemble.sh builds them.
-# The live URL is set once, in SITE_URL and BASE_PATH below. For a custom domain (e.g. vftech.io):
-# SITE_URL: https://vftech.io, BASE_PATH: /, and uncomment the cname line.
+# Served at https://vftech.io (custom domain). The live URL is set in SITE_URL and BASE_PATH
+# below, and cname keeps the domain on every deploy.
 #
 # One-time setup:
 #   1. In iamabotama/vftech.io: Settings → Deploy keys → add the public key, "Allow write access".
@@ -41,8 +41,8 @@ jobs:
 
       - name: Assemble the site
         env:
-          SITE_URL: https://iamabotama.github.io/vftech.io
-          BASE_PATH: /vftech.io/
+          SITE_URL: https://vftech.io
+          BASE_PATH: /
         run: bash scripts/assemble.sh ${{ github.run_number }}
 
       - name: Push to iamabotama/vftech.io
@@ -52,7 +52,7 @@ jobs:
           external_repository: iamabotama/vftech.io
           publish_branch: main
           publish_dir: ./_site
-          # cname: vftech.io   # uncomment if vftech.io is the custom domain
+          cname: vftech.io   # keeps the custom domain; without it each deploy deletes CNAME
           user_name: vftech-deploy[bot]
           user_email: vftech-deploy@users.noreply.github.com
           full_commit_message: "Deploy VFTECH@${{ github.event.workflow_run.head_sha || github.sha }}"
