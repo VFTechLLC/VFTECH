@@ -1,14 +1,14 @@
-# Publishes the assembled site to the live repo iamabotama/vftech.io (served by GitHub Pages)
+# Publishes the assembled site to the live repo VFAssociates/vftech.io (served by GitHub Pages)
 # after "Site checks" passes on main. site/ (design 1) is the site root; design-2/ to design-10/
 # publish at /design-N/ as noindexed alternates, exactly as scripts/assemble.sh builds them.
 # Served at https://vftech.io (custom domain). The live URL is set in SITE_URL and BASE_PATH
 # below, and cname keeps the domain on every deploy.
 #
 # One-time setup:
-#   1. In iamabotama/vftech.io: Settings → Deploy keys → add the public key, "Allow write access".
-#   2. In iamabotama/VFTECH: Settings → Secrets and variables → Actions → secret LIVE_DEPLOY_KEY
+#   1. In VFAssociates/vftech.io: Settings → Deploy keys → add the public key, "Allow write access".
+#   2. In VFAssociates/VFTECH: Settings → Secrets and variables → Actions → secret LIVE_DEPLOY_KEY
 #      = the matching private key.
-#   3. In iamabotama/vftech.io: Settings → Pages → Source: "Deploy from a branch", branch main, / (root).
+#   3. In VFAssociates/vftech.io: Settings → Pages → Source: "Deploy from a branch", branch main, / (root).
 name: Deploy to live site (vftech.io)
 
 on:
@@ -45,11 +45,11 @@ jobs:
           BASE_PATH: /
         run: bash scripts/assemble.sh ${{ github.run_number }}
 
-      - name: Push to iamabotama/vftech.io
+      - name: Push to VFAssociates/vftech.io
         uses: peaceiris/actions-gh-pages@v4
         with:
           deploy_key: ${{ secrets.LIVE_DEPLOY_KEY }}
-          external_repository: iamabotama/vftech.io
+          external_repository: VFAssociates/vftech.io
           publish_branch: main
           publish_dir: ./_site
           cname: vftech.io   # keeps the custom domain; without it each deploy deletes CNAME

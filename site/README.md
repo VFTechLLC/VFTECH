@@ -29,7 +29,7 @@ All in `styles.css`:
 
 ## Before launch
 
-- **Contact details**: replace the placeholders `hello@vftech.example` and `(000) 000-0000`. They appear on every page (in the footer) and three times in `contact.html`.
+- **Contact details**: email is `kevinvf@vftech.io`; the phone `(000) 000-0000` is still a placeholder. Both appear on every page (in the footer) and three times in `contact.html`.
 - **Booking form**: connect it to delivery. Today it composes the request and offers to copy it, and says plainly that nothing has been sent. The form handler is in `site.js` (`#book-form`).
 - **Wordmark**: the lockup uses the TT Norms Pro version of the wordmark, built from an evaluation-only trial font. Buy a TypeType license before publishing, or switch to the Montserrat lockup in `/logo`.
 - **Copy to confirm**:
