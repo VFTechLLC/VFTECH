@@ -6,20 +6,51 @@ Plain HTML site on GitHub Pages, with a Cloudflare Worker behind `/api/*` for th
 
 ## Tech stack
 
+A visit goes top to bottom, one layer at a time. vftech.io does **not** use Supabase: login, contact and the database all run on our own Cloudflare Worker and Cloudflare D1.
+
 ```mermaid
-flowchart LR
-  V["Visitor's browser"] --> CF["Cloudflare<br/>DNS + proxy, SSL Full<br/>zone vftech.io"]
-  CF -- "pages, CSS, JS" --> GP["GitHub Pages<br/>VFAssociates/vftech.io"]
-  CF -- "/api/* and /services-config.js" --> W["Cloudflare Worker<br/>vftech-client-services"]
-  SRC["Source: VFTechLLC/VFTECH<br/>Deploy to live site Action<br/>(run by hand)"] -- build --> GP
-  W --> TS["Turnstile<br/>spam check"]
-  W --> D1[("D1 database<br/>vftech-clients")]
-  W --> RS["Resend<br/>noreply@vftech.io"]
-  W --> GG["Google sign-in<br/>Cloud project VF Tech"]
-  RS --> IN["admin@vftech.io<br/>kevinvf@vftech.io"]
+flowchart TB
+  U["Visitor's browser"]
+  subgraph L1["1. DNS"]
+    DNS["Cloudflare DNS + proxy<br/>zone vftech.io, SSL Full"]
+  end
+  subgraph L2["2. Frontend hosting"]
+    GP["GitHub Pages<br/>static HTML, CSS, JS"]
+  end
+  subgraph L3["3. Our API"]
+    W["Cloudflare Worker, JavaScript<br/>vftech.io/api/*"]
+  end
+  subgraph L4["4. Email, login and spam check"]
+    RS["Resend API<br/>contact emails, sign-in codes"]
+    GO["Google OAuth<br/>Continue with Google"]
+    TS["Cloudflare Turnstile<br/>spam check"]
+  end
+  subgraph L5["5. Database"]
+    D1[("Cloudflare D1<br/>SQLite, hosted by Cloudflare")]
+  end
+  U --> DNS
+  DNS -- "pages" --> GP
+  DNS -- "/api/*" --> W
+  W --> RS
+  W --> GO
+  W --> TS
+  W --> D1
 ```
 
-The Worker also runs a nightly cleanup at 03:17 UTC (expired codes, sessions, rate limits). Company mailboxes are on Google Workspace; the MX, SPF, DKIM and DMARC records sit in the same Cloudflare zone.
+| Layer | Technology | Hosted on | Used for |
+|---|---|---|---|
+| 1. DNS | Cloudflare DNS, proxied | Cloudflare | Points vftech.io at the site and sends `/api/*` to the Worker |
+| 2. Frontend | Plain HTML, CSS, JavaScript | GitHub Pages (`VFAssociates/vftech.io`) | Every page and the 9 alternate designs |
+| 3. Our API | Cloudflare Worker (JavaScript) | Cloudflare | Contact form, customer login, sessions, request history |
+| 4. Email | Resend API, from noreply@vftech.io | Resend | Contact requests to admin@ and kevinvf@, sign-in codes |
+| 4. Login | Email code (built in) + Google OAuth | Worker + Google Cloud project VF Tech | Customer accounts, no passwords stored |
+| 4. Spam check | Cloudflare Turnstile | Cloudflare | Contact form and sign-in |
+| 5. Database | Cloudflare D1 (SQLite) | Cloudflare | Customers, sessions, contact requests |
+| Mailboxes | Google Workspace | Google | Company email; MX, SPF, DKIM, DMARC in the same Cloudflare zone |
+
+**Adding our own APIs or database later** (Railway or similar): they would slot in at layer 3 and layer 5. The Worker can call another API, and D1 can stay or be replaced by a hosted Postgres.
+
+The Worker also runs a nightly cleanup at 03:17 UTC (expired codes, sessions, rate limits). Source code is in `VFTechLLC/VFTECH`; the **Deploy to live site** Action (run by hand) builds it into GitHub Pages.
 
 ## Site map
 
