@@ -1,12 +1,17 @@
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "name": "vftech-client-services",
+  "account_id": "8d93f72116955f1627f2173c40dee8e9",
   "main": "worker.js",
   "compatibility_date": "2026-10-01",
-  "workers_dev": true,
+  "workers_dev": false,
+  "routes": [
+    {"pattern": "vftech.io/api/*", "zone_name": "vftech.io"},
+    {"pattern": "vftech.io/services-config.js*", "zone_name": "vftech.io"}
+  ],
   "assets": {"directory": "../_site", "binding": "ASSETS", "run_worker_first": true},
-  "d1_databases": [{"binding": "DB", "database_name": "vftech-clients", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "migrations"}],
-  "vars": {"SITE_URL": "", "TURNSTILE_SITE_KEY": "", "TURNSTILE_HOSTNAME": "", "EMAIL_FROM": "", "CONTACT_TO": ""},
+  "d1_databases": [{"binding": "DB", "database_name": "vftech-clients", "database_id": "7344e06e-af73-427b-b678-48c2d828bf36", "migrations_dir": "migrations"}],
+  "vars": {"SITE_URL": "https://vftech.io", "TURNSTILE_SITE_KEY": "0x4AAAAAAFqP5YNrfVqak-um", "TURNSTILE_HOSTNAME": "vftech.io", "EMAIL_FROM": "VF Tech <noreply@vftech.io>", "CONTACT_TO": "admin@vftech.io,kevinvf@vftech.io"},
   "triggers": {"crons": ["17 3 * * *"]},
   "observability": {"enabled": false}
 }
