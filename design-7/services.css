@@ -6,3 +6,6 @@
 /* live desktop preview inside a project card: a 1440×756 viewport scaled to the card width */
 .vfs-live-frame{display:block;position:relative;aspect-ratio:1200/630;overflow:hidden;background:#0C1013 url("assets/daiquiri-depot-card.jpg") center/cover}
 .vfs-live-frame iframe{position:absolute;top:0;left:0;width:1440px;height:756px;border:0;transform:scale(var(--s,.38));transform-origin:0 0;pointer-events:none;background:transparent}
+
+.vfs-social{display:grid;gap:.6rem;margin:0 0 1.2rem}
+.vfs-social .vfs-button{text-align:center;text-decoration:none}
