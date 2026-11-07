@@ -48,22 +48,23 @@
     // invoices with tax. Subscribing goes through Stripe Checkout after the Terms are accepted. Only when the Worker
     // says billing is on.
     var billingBox=document.getElementById('vf-billing'),billingBody=document.getElementById('vf-billing-body');
-    var wantedPlan=new URLSearchParams(location.search).get('subscribe'),billingResult=new URLSearchParams(location.search).get('billing');
+    var query=new URLSearchParams(location.search),wantedPlan=query.get('subscribe')||query.get('buy'),billingResult=query.get('billing');
     try{if(wantedPlan&&plan(wantedPlan))sessionStorage.setItem('vf-subscribe',wantedPlan);else wantedPlan=sessionStorage.getItem('vf-subscribe');}catch{}
     if(wantedPlan&&!plan(wantedPlan))wantedPlan=null;
-    if(billingResult||new URLSearchParams(location.search).get('subscribe'))history.replaceState(null,'',location.pathname);
-    if(wantedPlan&&settings.billingEnabled)accountStatus.textContent='Sign in to subscribe to '+plan(wantedPlan).name+'.';
+    function monthly(id){return catalog.plans.some(function(p){return p.id===id;});}
+    if(billingResult||query.get('subscribe')||query.get('buy'))history.replaceState(null,'',location.pathname);
+    if(wantedPlan&&settings.billingEnabled)accountStatus.textContent='Sign in to '+(monthly(wantedPlan)?'subscribe to ':'pay for ')+plan(wantedPlan).name+'.';
     function money(cents,currency){return (cents/100).toLocaleString('en-US',{style:'currency',currency:(currency||'usd').toUpperCase()});}
     function day(seconds){return new Date(seconds*1000).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}
     async function goTo(path,data,button){button.disabled=true;try{var result=await call(path,data,state.csrf);location.href=result.url;}catch(error){accountStatus.textContent=error.message;button.disabled=false;}}
     function subscribeForm(id){
-      var chosen=plan(id),form=element('form','vfs-form vfs-subscribe');
-      form.append(element('p','','Subscribe to '+chosen.name+' for '+chosen.price.replace('/mo',' a month')+', plus tax where it applies. Billed monthly; cancel any time from this page.'));
-      var label=element('label','vfs-check'),box=element('input');box.type='checkbox';box.required=true;box.id='vf-accept-terms';label.append(box,document.createTextNode(' I agree to the '));var link=element('a','','Terms of Service');link.href='terms.html';link.target='_blank';label.append(link,document.createTextNode(' (no refunds; cancelling stops the plan at the end of the paid month).'));
+      var chosen=plan(id),recurring=monthly(id),form=element('form','vfs-form vfs-subscribe');
+      form.append(element('p','',recurring?'Subscribe to '+chosen.name+' for '+chosen.price.replace('/mo',' a month')+', plus tax where it applies. Billed monthly; cancel any time from this page.':'Pay for '+chosen.name+': '+chosen.price.replace(' Fixed','')+' one-time, plus tax where it applies. The receipt will appear in your billing history.'));
+      var label=element('label','vfs-check'),box=element('input');box.type='checkbox';box.required=true;box.id='vf-accept-terms';label.append(box,document.createTextNode(' I agree to the '));var link=element('a','','Terms of Service');link.href='terms.html';link.target='_blank';label.append(link,document.createTextNode(recurring?' (no refunds; cancelling stops the plan at the end of the paid month).':'.'));
       var go=element('button','vfs-button','Continue to secure payment');go.type='submit';
-      var other=element('button','vfs-button vfs-secondary','Choose another plan');other.type='button';other.addEventListener('click',function(){try{sessionStorage.removeItem('vf-subscribe');}catch{}renderBilling({enabled:true,subscription:null,invoices:[]});});
+      var other=element('button','vfs-button vfs-secondary',recurring?'Choose another plan':'Not now');other.type='button';other.addEventListener('click',function(){try{sessionStorage.removeItem('vf-subscribe');}catch{}renderBilling({enabled:true,subscription:null,invoices:[]});});
       form.append(label,go,other);
-      form.addEventListener('submit',function(event){event.preventDefault();if(!form.reportValidity())return;try{sessionStorage.removeItem('vf-subscribe');}catch{}accountStatus.textContent='Opening secure payment…';goTo('billing/checkout',{planId:id,acceptTerms:true},go);});
+      form.addEventListener('submit',function(event){event.preventDefault();if(!form.reportValidity())return;try{sessionStorage.removeItem('vf-subscribe');}catch{}accountStatus.textContent='Opening secure payment…';goTo('billing/checkout',{itemId:id,acceptTerms:true},go);});
       return form;
     }
     function renderBilling(data){
@@ -74,7 +75,9 @@
         var line=element('p','vfs-plan-line');line.append(element('strong','',sub.planName+' plan'),document.createTextNode(' · '+(states[sub.status]||sub.status)));billingBody.append(line);
         if(sub.currentPeriodEnd)billingBody.append(element('p','vfs-small',sub.cancelAtPeriodEnd?'Cancelled: active until '+day(sub.currentPeriodEnd)+', then it stops. No further charges.':'Renews on '+day(sub.currentPeriodEnd)+'.'));
         if(sub.status==='past_due'||sub.status==='unpaid')billingBody.append(element('p','vfs-status','Your last payment didn’t go through. Update your card in Manage billing to keep the plan.'));
-      }else if(wantedPlan){billingBody.append(subscribeForm(wantedPlan));}
+      }
+      if(wantedPlan&&!(sub&&monthly(wantedPlan))){billingBody.append(subscribeForm(wantedPlan));}
+      else if(sub){if(wantedPlan)accountStatus.textContent='You already have a plan. Use Manage billing to change or cancel it.';}
       else{
         billingBody.append(element('p','vfs-small','You don’t have a monthly plan yet.'));
         var choices=element('div','vfs-plan-choices');catalog.plans.forEach(function(p){var b=element('button','vfs-button vfs-secondary','Choose '+p.name+' · '+p.price);b.type='button';b.addEventListener('click',function(){wantedPlan=p.id;renderBilling(data);});choices.append(b);});billingBody.append(choices);
@@ -91,6 +94,7 @@
       if(!settings.billingEnabled||!billingBox)return;
       billingBox.hidden=false;billingBody.textContent='Loading your plan…';
       if(billingResult==='success')accountStatus.textContent='Thank you. Your plan is set up; it may take a moment to show here.';
+      if(billingResult==='paid')accountStatus.textContent='Thank you, your payment went through. The receipt is in your billing history.';
       if(billingResult==='cancelled')accountStatus.textContent='Payment cancelled. Nothing was charged.';
       try{var data=await call('billing');if(!data.enabled){billingBox.hidden=true;return;}renderBilling(data);}catch(error){billingBody.textContent=error.message;}
     }

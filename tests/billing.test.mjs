@@ -108,3 +108,24 @@ test('Helpers: Stripe form encoding and signature checks', async () => {
   assert.equal(await verifyWebhook(payload + ' ', await sign(payload, 's', now), 's', now), null);
   assert.equal(await verifyWebhook(payload, '', 's', now), null);
 });
+
+test('A fixed-price build is a one-time payment with an invoice; quoted work cannot be bought online', async (t) => {
+  const f = setup(t), login = await f.login();
+  f.state.stripe.prices['vftech_launch_once'] = {id: 'price_launch', lookup_key: 'vftech_launch_once', unit_amount: 350000};
+  const paid = await f.request('billing/checkout', {itemId: 'launch', acceptTerms: true}, as(login));
+  assert.equal(paid.status, 200);
+  const session = f.state.stripe.sessions.at(-1);
+  assert.equal(session.mode, 'payment');
+  assert.equal(session['line_items[0][price]'], 'price_launch');
+  assert.equal(session['invoice_creation[enabled]'], 'true', 'the receipt lands in billing history');
+  assert.equal(session.success_url, 'https://vftech.test/account.html?billing=paid');
+  assert.equal(session['subscription_data[metadata][plan_id]'], undefined);
+  const quoted = await f.request('billing/checkout', {itemId: 'custom-application', acceptTerms: true}, as(login));
+  assert.equal(quoted.status, 400);
+  assert.match(quoted.body.error, /quoted work/i);
+  // One-time purchases are allowed alongside a running plan.
+  f.state.stripe.subscriptions.push({id: 'sub_1', customer: 'cus_1', status: 'active', current_period_end: 1900000000, cancel_at_period_end: false, items: {data: [{price: {lookup_key: lookupKey('standard')}}]}});
+  await f.request('billing', undefined, as(login, false));
+  assert.equal((await f.request('billing/checkout', {itemId: 'launch', acceptTerms: true}, as(login))).status, 200);
+  assert.equal((await f.request('billing/checkout', {itemId: 'priority', acceptTerms: true}, as(login))).status, 409);
+});

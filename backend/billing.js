@@ -8,6 +8,12 @@ const LIVE_STATUSES = new Set(['active', 'trialing', 'past_due', 'unpaid', 'inco
 const SIGNATURE_TOLERANCE = 300;
 
 export const lookupKey = (planId) => `vftech_${planId}_monthly`;
+/** One-time purchases: catalog builds with a fixed published price ("$3,500 Fixed"). Ranges and quotes aren't sold online. */
+export const oneTimeKey = (itemId) => `vftech_${itemId}_once`;
+export function fixedPriceCents(price) {
+  const match = /^\$([\d,]+(?:\.\d{2})?) Fixed$/.exec(price || '');
+  return match ? Math.round(Number(match[1].replace(/,/g, '')) * 100) : null;
+}
 const planFromLookupKey = (key) => /^vftech_([a-z0-9-]+)_monthly$/.exec(key || '')?.[1] ?? null;
 
 /** Stripe's form encoding: nested objects as a[b]=c, arrays as a[0][b]=c. */
@@ -40,6 +46,7 @@ export async function verifyWebhook(payload, header, secret, nowSeconds) {
 
 export function billing({ HTTPError, json, now, origin, catalog }) {
   const plans = new Map(catalog.plans.map((plan) => [plan.id, plan]));
+  const oneTime = new Map(catalog.builds.filter((build) => fixedPriceCents(build.price) !== null).map((build) => [build.id, build]));
   const enabled = (env) => Boolean(env.STRIPE_SECRET_KEY && env.DB && origin(env));
 
   async function stripe(env, method, path, params, idempotencyKey) {
@@ -116,28 +123,38 @@ export function billing({ HTTPError, json, now, origin, catalog }) {
   }
 
   /** POST /api/billing/checkout {planId, acceptTerms}: a Stripe Checkout page for one monthly plan. */
+  /**
+   * POST /api/billing/checkout {itemId, acceptTerms}: a Stripe Checkout page. A monthly plan becomes a subscription;
+   * a fixed-price build (e.g. "$3,500 Fixed") is a one-time payment with an invoice, so it shows in billing history.
+   * Ranged or quoted work can't be bought here: VF Tech sends a Stripe invoice once the price is agreed.
+   */
   async function checkout(env, active, input) {
     if (!enabled(env)) throw new HTTPError(503, 'Online payment is not switched on yet. Contact us to start a plan.');
-    const plan = plans.get(typeof input.planId === 'string' ? input.planId : '');
-    if (!plan) throw new HTTPError(400, 'Choose one of the monthly plans.');
+    const id = typeof input.itemId === 'string' ? input.itemId : typeof input.planId === 'string' ? input.planId : '';
+    const plan = plans.get(id), item = oneTime.get(id);
+    if (!plan && !item) throw new HTTPError(400, catalog.builds.some((build) => build.id === id) ? 'This is quoted work. Contact us and we’ll send an invoice once the price is agreed.' : 'Choose one of the published plans.');
     if (input.acceptTerms !== true) throw new HTTPError(400, 'Please accept the Terms of Service to continue.');
-    if (await currentSubscription(env, active.customer.id)) throw new HTTPError(409, 'You already have a plan. Use Manage billing to change or cancel it.');
-    const prices = await stripe(env, 'GET', 'prices', { lookup_keys: [lookupKey(plan.id)], active: 'true', limit: 1 });
+    if (plan && (await currentSubscription(env, active.customer.id))) throw new HTTPError(409, 'You already have a plan. Use Manage billing to change or cancel it.');
+    const chosen = plan || item;
+    const prices = await stripe(env, 'GET', 'prices', { lookup_keys: [plan ? lookupKey(plan.id) : oneTimeKey(item.id)], active: 'true', limit: 1 });
     const price = prices.data?.[0];
-    if (!price) throw new HTTPError(503, `${plan.name} isn't available for online payment yet. Contact us to start it.`);
+    if (!price) throw new HTTPError(503, `${chosen.name} isn't available for online payment yet. Contact us to start it.`);
     const customer = await stripeCustomer(env, active.customer);
     const base = origin(env);
+    const metadata = { vftech_customer_id: active.customer.id, item_id: chosen.id, terms_accepted_at: String(now()) };
     const session = await stripe(env, 'POST', 'checkout/sessions', {
-      mode: 'subscription',
+      mode: plan ? 'subscription' : 'payment',
       customer,
       client_reference_id: active.customer.id,
       line_items: [{ price: price.id, quantity: 1 }],
-      success_url: `${base}/account.html?billing=success`,
+      success_url: `${base}/account.html?billing=${plan ? 'success' : 'paid'}`,
       cancel_url: `${base}/account.html?billing=cancelled`,
       billing_address_collection: 'required',
       customer_update: { address: 'auto', name: 'auto' },
       automatic_tax: { enabled: env.STRIPE_TAX === 'on' ? 'true' : 'false' },
-      subscription_data: { metadata: { vftech_customer_id: active.customer.id, plan_id: plan.id, terms_accepted_at: String(now()) } },
+      ...(plan
+        ? { subscription_data: { metadata: { ...metadata, plan_id: plan.id } } }
+        : { invoice_creation: { enabled: 'true', invoice_data: { description: `VF Tech ${item.name}`, metadata } }, payment_intent_data: { metadata } }),
       allow_promotion_codes: 'false',
     });
     return json({ url: session.url });
