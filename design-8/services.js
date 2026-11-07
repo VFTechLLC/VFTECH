@@ -7,6 +7,8 @@
   var api;
   try{api=settings.apiBase?new URL(settings.apiBase.replace(/\/$/,'')+'/',location.origin):null;if(api&&api.origin!==location.origin)api=null;}catch{api=null;}
   async function call(path,data,csrf){var headers={'Accept':'application/json'};if(data!==undefined)headers['Content-Type']='application/json';if(csrf)headers['X-CSRF-Token']=csrf;var response=await fetch(new URL(path,api),{method:data===undefined?'GET':'POST',credentials:'same-origin',headers:headers,body:data===undefined?undefined:JSON.stringify(data),signal:AbortSignal.timeout(15000)});var result;try{result=await response.json();}catch{throw Error('The service could not respond. Please try again.');}if(!response.ok)throw Error(result.error||'The request could not be completed.');return result;}
+  // Subscribe buttons on the plan cards (features page) only show when the Worker has billing switched on.
+  if(settings.billingEnabled)document.querySelectorAll('[data-vf-subscribe]').forEach(function(link){link.hidden=false;});
   var loader;
   function loadCaptcha(){if(window.turnstile)return Promise.resolve();if(loader)return loader;loader=new Promise(function(resolve,reject){window.vfTechTurnstileReady=resolve;var script=element('script');script.src='https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&onload=vfTechTurnstileReady';script.async=true;script.onerror=function(){reject(Error('Verification could not load. Please try again.'));};document.head.append(script);});return loader;}
   function verification(container,action,submit,status){var token='',widget=null;submit.disabled=true;loadCaptcha().then(function(){widget=turnstile.render(container,{sitekey:settings.turnstileSiteKey,action:action,size:'flexible',callback:function(value){token=value;submit.disabled=false;},'expired-callback':function(){token='';submit.disabled=true;status.textContent='Verification expired. Please verify again.';},'error-callback':function(){token='';submit.disabled=true;status.textContent='Verification could not complete. Please try again.';}});}).catch(function(error){status.textContent=error.message;});return {get:function(){return token;},reset:function(){token='';submit.disabled=true;if(widget!==null)turnstile.reset(widget);}};}
@@ -42,6 +44,57 @@
     codeForm.addEventListener('submit',async function(event){event.preventDefault();if(!codeForm.reportValidity())return;var submit=codeForm.querySelector('button[type=submit]');submit.disabled=true;accountStatus.textContent='Verifying your code…';try{var result=await call('auth/verify-code',{email:state.email,challengeId:state.challengeId,code:document.getElementById('vf-code').value});codeForm.reset();await showAccount(result);}catch(error){accountStatus.textContent=error.message;}finally{submit.disabled=false;}});
     document.getElementById('vf-change-email').addEventListener('click',function(){showLoggedOut();accountCaptcha.reset();accountStatus.textContent='Enter your email and complete verification for a new code.';document.getElementById('vf-email').focus();});
     document.getElementById('vf-logout').addEventListener('click',async function(){this.disabled=true;try{await call('auth/logout',{},state.csrf);showLoggedOut();accountCaptcha.reset();accountStatus.textContent='You are signed out.';}catch(error){accountStatus.textContent=error.message;}finally{this.disabled=false;}});
+    // Billing (backend/billing.js): the customer's plan, Manage billing (Stripe's portal: card, invoices, cancel) and
+    // invoices with tax. Subscribing goes through Stripe Checkout after the Terms are accepted. Only when the Worker
+    // says billing is on.
+    var billingBox=document.getElementById('vf-billing'),billingBody=document.getElementById('vf-billing-body');
+    var wantedPlan=new URLSearchParams(location.search).get('subscribe'),billingResult=new URLSearchParams(location.search).get('billing');
+    try{if(wantedPlan&&plan(wantedPlan))sessionStorage.setItem('vf-subscribe',wantedPlan);else wantedPlan=sessionStorage.getItem('vf-subscribe');}catch{}
+    if(wantedPlan&&!plan(wantedPlan))wantedPlan=null;
+    if(billingResult||new URLSearchParams(location.search).get('subscribe'))history.replaceState(null,'',location.pathname);
+    if(wantedPlan&&settings.billingEnabled)accountStatus.textContent='Sign in to subscribe to '+plan(wantedPlan).name+'.';
+    function money(cents,currency){return (cents/100).toLocaleString('en-US',{style:'currency',currency:(currency||'usd').toUpperCase()});}
+    function day(seconds){return new Date(seconds*1000).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}
+    async function goTo(path,data,button){button.disabled=true;try{var result=await call(path,data,state.csrf);location.href=result.url;}catch(error){accountStatus.textContent=error.message;button.disabled=false;}}
+    function subscribeForm(id){
+      var chosen=plan(id),form=element('form','vfs-form vfs-subscribe');
+      form.append(element('p','','Subscribe to '+chosen.name+' for '+chosen.price.replace('/mo',' a month')+', plus tax where it applies. Billed monthly; cancel any time from this page.'));
+      var label=element('label','vfs-check'),box=element('input');box.type='checkbox';box.required=true;box.id='vf-accept-terms';label.append(box,document.createTextNode(' I agree to the '));var link=element('a','','Terms of Service');link.href='terms.html';link.target='_blank';label.append(link,document.createTextNode(' (no refunds; cancelling stops the plan at the end of the paid month).'));
+      var go=element('button','vfs-button','Continue to secure payment');go.type='submit';
+      var other=element('button','vfs-button vfs-secondary','Choose another plan');other.type='button';other.addEventListener('click',function(){try{sessionStorage.removeItem('vf-subscribe');}catch{}renderBilling({enabled:true,subscription:null,invoices:[]});});
+      form.append(label,go,other);
+      form.addEventListener('submit',function(event){event.preventDefault();if(!form.reportValidity())return;try{sessionStorage.removeItem('vf-subscribe');}catch{}accountStatus.textContent='Opening secure payment…';goTo('billing/checkout',{planId:id,acceptTerms:true},go);});
+      return form;
+    }
+    function renderBilling(data){
+      billingBody.textContent='';
+      var sub=data.subscription;
+      if(sub){
+        var states={active:'Active',trialing:'Active',past_due:'Payment failed',unpaid:'Payment failed',incomplete:'Waiting for payment'};
+        var line=element('p','vfs-plan-line');line.append(element('strong','',sub.planName+' plan'),document.createTextNode(' · '+(states[sub.status]||sub.status)));billingBody.append(line);
+        if(sub.currentPeriodEnd)billingBody.append(element('p','vfs-small',sub.cancelAtPeriodEnd?'Cancelled: active until '+day(sub.currentPeriodEnd)+', then it stops. No further charges.':'Renews on '+day(sub.currentPeriodEnd)+'.'));
+        if(sub.status==='past_due'||sub.status==='unpaid')billingBody.append(element('p','vfs-status','Your last payment didn’t go through. Update your card in Manage billing to keep the plan.'));
+      }else if(wantedPlan){billingBody.append(subscribeForm(wantedPlan));}
+      else{
+        billingBody.append(element('p','vfs-small','You don’t have a monthly plan yet.'));
+        var choices=element('div','vfs-plan-choices');catalog.plans.forEach(function(p){var b=element('button','vfs-button vfs-secondary','Choose '+p.name+' · '+p.price);b.type='button';b.addEventListener('click',function(){wantedPlan=p.id;renderBilling(data);});choices.append(b);});billingBody.append(choices);
+      }
+      if(sub||data.invoices.length){var manage=element('button','vfs-button','Manage billing: change card, see invoices or cancel');manage.type='button';manage.addEventListener('click',function(){accountStatus.textContent='Opening billing…';goTo('billing/portal',{},manage);});billingBody.append(manage);}
+      if(data.invoices.length){
+        billingBody.append(element('h4','','Billing history'));
+        var table=element('table','vfs-invoices'),head=element('tr');['Date','Invoice','Amount','Tax','Status',''].forEach(function(h){head.append(element('th','',h));});var thead=element('thead');thead.append(head);table.append(thead);var tbody=element('tbody');
+        data.invoices.forEach(function(inv){var row=element('tr');[day(inv.date),inv.number||'—',money(inv.total,inv.currency),money(inv.tax||0,inv.currency),inv.status==='paid'?'Paid':inv.status==='open'?'Due':inv.status].forEach(function(v){row.append(element('td','',v));});var cell=element('td');if(inv.url){var a=element('a','','View');a.href=inv.url;a.target='_blank';a.rel='noopener';cell.append(a);}if(inv.pdf){var p=element('a','',' PDF');p.href=inv.pdf;p.target='_blank';p.rel='noopener';cell.append(p);}row.append(cell);tbody.append(row);});
+        table.append(tbody);billingBody.append(table);
+      }
+    }
+    async function loadBilling(){
+      if(!settings.billingEnabled||!billingBox)return;
+      billingBox.hidden=false;billingBody.textContent='Loading your plan…';
+      if(billingResult==='success')accountStatus.textContent='Thank you. Your plan is set up; it may take a moment to show here.';
+      if(billingResult==='cancelled')accountStatus.textContent='Payment cancelled. Nothing was charged.';
+      try{var data=await call('billing');if(!data.enabled){billingBox.hidden=true;return;}renderBilling(data);}catch(error){billingBody.textContent=error.message;}
+    }
+    var baseShowAccount=showAccount;showAccount=async function(result){await baseShowAccount(result);loadBilling();};
     call('session').then(function(result){if(result.authenticated)showAccount(result);}).catch(function(){accountStatus.textContent='The account service could not be reached. Please try again later.';signSubmit.disabled=true;});
   }
 })();
