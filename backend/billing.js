@@ -147,6 +147,8 @@ export function billing({ HTTPError, json, now, origin, catalog }) {
       customer,
       client_reference_id: active.customer.id,
       line_items: [{ price: price.id, quantity: 1 }],
+      // Cards (Visa, Mastercard…) and ACH bank debit only (boss, 2026-11-08); no Cash App, Amazon Pay or Link.
+      payment_method_types: ['card', 'us_bank_account'],
       success_url: `${base}/account.html?billing=${plan ? 'success' : 'paid'}`,
       cancel_url: `${base}/account.html?billing=cancelled`,
       billing_address_collection: 'required',

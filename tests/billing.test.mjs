@@ -50,6 +50,7 @@ test('Checkout creates the Stripe customer once and a subscription session for t
   assert.equal(session.success_url, 'https://vftech.test/account.html?billing=success');
   assert.equal(session['subscription_data[metadata][plan_id]'], 'standard');
   assert.equal(session['automatic_tax[enabled]'], 'false');
+  assert.deepEqual([session['payment_method_types[0]'], session['payment_method_types[1]']], ['card', 'us_bank_account'], 'cards and ACH only');
   assert.ok(f.state.stripe.keys.includes(`customer-${login.body.customer.id}`), 'customer creation is idempotent');
   await f.request('billing/checkout', {planId: 'standard', acceptTerms: true}, as(login));
   assert.equal(f.state.stripe.customers.length, 1, 'second checkout reuses the customer');
