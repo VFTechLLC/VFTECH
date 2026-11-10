@@ -7,7 +7,10 @@ import {formEncode, verifyWebhook, lookupKey} from '../backend/billing.js';
 function setup(t, {key = true} = {}) {
   const f = fixture();
   t.after(() => f.close());
-  if (key) f.env.STRIPE_SECRET_KEY = 'sk_test_fixture';
+  if (key) {
+    f.env.STRIPE_SECRET_KEY = 'sk_test_fixture';
+    f.env.BILLING_TEST_EMAILS = 'one@example.test';
+  }
   f.state.stripe.prices[lookupKey('standard')] = {id: 'price_standard', lookup_key: lookupKey('standard'), unit_amount: 75000};
   return f;
 }
@@ -27,9 +30,25 @@ test('Without a Stripe key billing is off and Stripe is never called', async (t)
   assert.equal(stripeCalls(f).length, 0);
 });
 
+test('With a test key billing is on only for BILLING_TEST_EMAILS; a live key turns it on for everyone', async (t) => {
+  const f = setup(t), tester = await f.login(), other = await f.login('two@example.test');
+  const config = (await f.request('config')).body;
+  assert.equal(config.billingEnabled, false, 'no public Subscribe buttons in test mode');
+  assert.equal(config.billingTest, true);
+  assert.equal((await f.request('billing', undefined, as(tester))).body.enabled, true);
+  assert.deepEqual((await f.request('billing', undefined, as(other))).body, {enabled: false});
+  assert.equal((await f.request('billing/checkout', {planId: 'standard', acceptTerms: true}, as(other))).status, 503);
+  assert.equal((await f.request('billing/portal', {}, as(other))).status, 503);
+  f.env.STRIPE_SECRET_KEY = 'sk_live_fixture';
+  const liveConfig = (await f.request('config')).body;
+  assert.equal(liveConfig.billingEnabled, true);
+  assert.equal(liveConfig.billingTest, false);
+  assert.equal((await f.request('billing', undefined, as(other))).body.enabled, true);
+});
+
 test('Checkout needs a session, the CSRF token, accepted terms and a published monthly plan', async (t) => {
   const f = setup(t), login = await f.login();
-  assert.equal((await f.request('config')).body.billingEnabled, true);
+  assert.equal((await f.request('config')).body.billingTest, true, 'test mode: Subscribe shows for testers only');
   assert.equal((await f.request('billing/checkout', {planId: 'standard', acceptTerms: true})).status, 401);
   assert.equal((await f.request('billing/checkout', {planId: 'standard', acceptTerms: true}, as(login, false))).status, 403);
   assert.equal((await f.request('billing/checkout', {planId: 'standard'}, as(login))).status, 400);
@@ -70,6 +89,7 @@ test('Billing status shows the live subscription and invoices with tax, and bloc
   assert.deepEqual(status.body.subscription, {id: 'sub_1', planId: 'standard', planName: 'Standard', status: 'active', currentPeriodEnd: 1900000000, cancelAtPeriodEnd: false});
   assert.deepEqual(status.body.invoices.map((invoice) => [invoice.number, invoice.total, invoice.tax, invoice.status]), [['VF-0001', 81975, 6975, 'paid']]);
   assert.equal((await f.request('billing/checkout', {planId: 'priority', acceptTerms: true}, as(login))).status, 409);
+  f.env.BILLING_TEST_EMAILS = 'one@example.test,two@example.test';
   const other = await f.login('two@example.test');
   const theirs = await f.request('billing', undefined, as(other, false));
   assert.equal(theirs.body.subscription, null);

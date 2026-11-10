@@ -48,6 +48,15 @@ export function billing({ HTTPError, json, now, origin, catalog }) {
   const plans = new Map(catalog.plans.map((plan) => [plan.id, plan]));
   const oneTime = new Map(catalog.builds.filter((build) => fixedPriceCents(build.price) !== null).map((build) => [build.id, build]));
   const enabled = (env) => Boolean(env.STRIPE_SECRET_KEY && env.DB && origin(env));
+  const live = (env) => String(env.STRIPE_SECRET_KEY || '').startsWith('sk_live_');
+  /** With a live key billing is on for everyone; with a test key only for BILLING_TEST_EMAILS (comma-separated), so a
+   *  sandbox key on the live site can't reach real customers. */
+  const enabledFor = (env, email) => {
+    if (!enabled(env)) return false;
+    if (live(env)) return true;
+    const testers = String(env.BILLING_TEST_EMAILS || '').split(',').map((a) => a.trim().toLowerCase()).filter(Boolean);
+    return Boolean(email) && testers.includes(String(email).toLowerCase());
+  };
 
   async function stripe(env, method, path, params, idempotencyKey) {
     const url = new URL(path, STRIPE_API);
@@ -98,7 +107,7 @@ export function billing({ HTTPError, json, now, origin, catalog }) {
 
   /** GET /api/billing: the signed-in customer's plan and invoices (amount, tax, status, links), fresh from Stripe. */
   async function status(env, active) {
-    if (!enabled(env)) return json({ enabled: false });
+    if (!enabledFor(env, active.customer.email)) return json({ enabled: false });
     const row = await env.DB.prepare('SELECT stripe_customer_id FROM customers WHERE id=?').bind(active.customer.id).first();
     let invoices = [];
     if (row?.stripe_customer_id) {
@@ -129,7 +138,7 @@ export function billing({ HTTPError, json, now, origin, catalog }) {
    * Ranged or quoted work can't be bought here: VF Tech sends a Stripe invoice once the price is agreed.
    */
   async function checkout(env, active, input) {
-    if (!enabled(env)) throw new HTTPError(503, 'Online payment is not switched on yet. Contact us to start a plan.');
+    if (!enabledFor(env, active.customer.email)) throw new HTTPError(503, 'Online payment is not switched on yet. Contact us to start a plan.');
     const id = typeof input.itemId === 'string' ? input.itemId : typeof input.planId === 'string' ? input.planId : '';
     const plan = plans.get(id), item = oneTime.get(id);
     if (!plan && !item) throw new HTTPError(400, catalog.builds.some((build) => build.id === id) ? 'This is quoted work. Contact us and we’ll send an invoice once the price is agreed.' : 'Choose one of the published plans.');
@@ -164,7 +173,7 @@ export function billing({ HTTPError, json, now, origin, catalog }) {
 
   /** POST /api/billing/portal: Stripe's page to change card, see invoices or cancel (cancel takes effect at period end). */
   async function portal(env, active) {
-    if (!enabled(env)) throw new HTTPError(503, 'Online billing is not switched on yet.');
+    if (!enabledFor(env, active.customer.email)) throw new HTTPError(503, 'Online billing is not switched on yet.');
     const row = await env.DB.prepare('SELECT stripe_customer_id FROM customers WHERE id=?').bind(active.customer.id).first();
     if (!row?.stripe_customer_id) throw new HTTPError(404, 'There is no billing account yet. Choose a plan first.');
     const session = await stripe(env, 'POST', 'billing_portal/sessions', { customer: row.stripe_customer_id, return_url: `${origin(env)}/account.html` });
@@ -186,5 +195,5 @@ export function billing({ HTTPError, json, now, origin, catalog }) {
     return json({ received: true });
   }
 
-  return { enabled, status, checkout, portal, webhook };
+  return { enabled, live, enabledFor, status, checkout, portal, webhook };
 }
