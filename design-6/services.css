@@ -9,3 +9,14 @@
 
 .vfs-social{display:grid;gap:.6rem;margin:0 0 1.2rem}
 .vfs-social .vfs-button{text-align:center;text-decoration:none}
+
+/* Billing on the account page (services.js → renderBilling) */
+.vfs-billing{margin:4px 0 8px;padding:20px;border:1px solid var(--rule-strong,#c8cfdb);border-radius:12px;display:grid;gap:12px}
+.vfs-billing h3{margin-top:0}.vfs-billing h4{margin:1.25rem 0 .5rem}
+.vfs-plan-line{font-size:1.05rem;margin:.25rem 0}
+.vfs-plan-choices{display:flex;flex-wrap:wrap;gap:.5rem;margin:.75rem 0}
+.vfs-subscribe .vfs-check{display:block;margin:.75rem 0;line-height:1.5}
+.vfs-subscribe .vfs-check input{width:auto;margin-right:.4rem}
+.vfs-invoices{width:100%;border-collapse:collapse;font-size:.9rem}
+.vfs-invoices th,.vfs-invoices td{text-align:left;padding:.4rem .5rem;border-bottom:1px solid rgba(127,127,127,.3)}
+.vfs-invoices td a{margin-right:.5rem}

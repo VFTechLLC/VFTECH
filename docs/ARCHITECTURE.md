@@ -82,6 +82,10 @@ The Worker also runs a nightly cleanup at 03:17 UTC (expired codes, sessions, ra
 | GET | `/api/session` | Who is signed in |
 | GET | `/api/account/requests` | The customer's past requests |
 | POST | `/api/auth/logout` | Ends the session |
+| GET | `/api/billing` | The signed-in customer's plan and invoices (amount, tax, status), fresh from Stripe |
+| POST | `/api/billing/checkout` | Stripe Checkout for one monthly plan (terms must be accepted) |
+| POST | `/api/billing/portal` | Stripe's billing portal: card, invoices, cancel at period end |
+| POST | `/api/stripe/webhook` | Subscription changes from Stripe (signature-checked; re-reads the subscription) |
 
 ## What happens when…
 
@@ -131,5 +135,4 @@ The Worker also runs a nightly cleanup at 03:17 UTC (expired codes, sessions, ra
 
 ## Open items
 
-- Subscriptions and payments: on hold (Stripe or the bank's billing system, to be decided).
-- `account.html` still has old "until live services are enabled" wording.
+- Subscriptions: built on Stripe (`backend/billing.js`, `scripts/stripe-sync.mjs`), tested end to end in Stripe test mode. Switched on by the Worker secret `STRIPE_SECRET_KEY` (plus `STRIPE_WEBHOOK_SECRET`, and `STRIPE_TAX=on` once Stripe Tax is set up). Off on the live Worker until Stripe's live account is activated.
