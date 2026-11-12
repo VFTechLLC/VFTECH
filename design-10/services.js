@@ -8,7 +8,10 @@
   try{api=settings.apiBase?new URL(settings.apiBase.replace(/\/$/,'')+'/',location.origin):null;if(api&&api.origin!==location.origin)api=null;}catch{api=null;}
   async function call(path,data,csrf){var headers={'Accept':'application/json'};if(data!==undefined)headers['Content-Type']='application/json';if(csrf)headers['X-CSRF-Token']=csrf;var response=await fetch(new URL(path,api),{method:data===undefined?'GET':'POST',credentials:'same-origin',headers:headers,body:data===undefined?undefined:JSON.stringify(data),signal:AbortSignal.timeout(15000)});var result;try{result=await response.json();}catch{throw Error('The service could not respond. Please try again.');}if(!response.ok)throw Error(result.error||'The request could not be completed.');return result;}
   // Subscribe buttons on the plan cards (features page) only show when the Worker has billing switched on.
-  if(settings.billingEnabled)document.querySelectorAll('[data-vf-subscribe]').forEach(function(link){link.hidden=false;});
+  // In test mode (sandbox key) they show only for signed-in testers, once /api/billing says billing is on for them.
+  function showSubscribe(){document.querySelectorAll('[data-vf-subscribe]').forEach(function(link){link.hidden=false;});}
+  if(settings.billingEnabled)showSubscribe();
+  else if(settings.billingTest&&api&&document.querySelector('[data-vf-subscribe]'))call('billing').then(function(d){if(d&&d.enabled)showSubscribe();}).catch(function(){});
   var loader;
   function loadCaptcha(){if(window.turnstile)return Promise.resolve();if(loader)return loader;loader=new Promise(function(resolve,reject){window.vfTechTurnstileReady=resolve;var script=element('script');script.src='https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&onload=vfTechTurnstileReady';script.async=true;script.onerror=function(){reject(Error('Verification could not load. Please try again.'));};document.head.append(script);});return loader;}
   function verification(container,action,submit,status){var token='',widget=null;submit.disabled=true;loadCaptcha().then(function(){widget=turnstile.render(container,{sitekey:settings.turnstileSiteKey,action:action,size:'flexible',callback:function(value){token=value;submit.disabled=false;},'expired-callback':function(){token='';submit.disabled=true;status.textContent='Verification expired. Please verify again.';},'error-callback':function(){token='';submit.disabled=true;status.textContent='Verification could not complete. Please try again.';}});}).catch(function(error){status.textContent=error.message;});return {get:function(){return token;},reset:function(){token='';submit.disabled=true;if(widget!==null)turnstile.reset(widget);}};}
@@ -91,12 +94,12 @@
       }
     }
     async function loadBilling(){
-      if(!settings.billingEnabled||!billingBox)return;
+      if(!(settings.billingEnabled||settings.billingTest)||!billingBox)return;
       billingBox.hidden=false;billingBody.textContent='Loading your plan…';
       if(billingResult==='success')accountStatus.textContent='Thank you. Your plan is set up; it may take a moment to show here.';
       if(billingResult==='paid')accountStatus.textContent='Thank you, your payment went through. The receipt is in your billing history.';
       if(billingResult==='cancelled')accountStatus.textContent='Payment cancelled. Nothing was charged.';
-      try{var data=await call('billing');if(!data.enabled){billingBox.hidden=true;return;}renderBilling(data);}catch(error){billingBody.textContent=error.message;}
+      try{var data=await call('billing');if(!data.enabled){billingBox.hidden=true;return;}if(!settings.billingEnabled)showSubscribe();renderBilling(data);}catch(error){billingBody.textContent=error.message;}
     }
     var baseShowAccount=showAccount;showAccount=async function(result){await baseShowAccount(result);loadBilling();};
     call('session').then(function(result){if(result.authenticated)showAccount(result);}).catch(function(){accountStatus.textContent='The account service could not be reached. Please try again later.';signSubmit.disabled=true;});
