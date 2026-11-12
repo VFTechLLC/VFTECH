@@ -30,6 +30,17 @@
   /* ---- menu (under 1100px) ---- */
   var menuBtn = document.querySelector('.menu-btn');
   var nav = document.getElementById('site-nav');
+  /* Sign in / account link, added here once instead of in every page's menu. Sits before Contact. */
+  (function () {
+    var list = nav && nav.querySelector('ul');
+    if (!list || list.querySelector('a[href="account.html"]')) return;
+    var item = document.createElement('li'), link = document.createElement('a');
+    link.href = 'account.html'; link.textContent = 'Sign in';
+    if (/\/account\.html$/.test(location.pathname)) link.setAttribute('aria-current', 'page');
+    item.appendChild(link);
+    var contact = list.querySelector('a.tab');
+    list.insertBefore(item, contact ? contact.closest('li') : null);
+  })();
   var mobileNav = matchMedia('(max-width: 1100px)');
   function setMenu(open) {
     if (!menuBtn || !nav) return;
