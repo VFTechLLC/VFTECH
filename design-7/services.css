@@ -63,3 +63,30 @@
 @media (max-width:640px){.vfs-feature{flex-direction:column;align-items:flex-start}}
 .vfs-form-note:empty{display:none}
 .vfs-form-note{margin:4px 0 0;color:#B42318;font-weight:600}
+
+/* Plan states across the site (Accounts spec, phase 1b): header account button, plan chip and menu; plan cards. */
+.vfs-price{position:relative}
+.vfs-price-highlight{border-color:#2F6584;box-shadow:0 0 0 1px #2F6584}
+.vfs-ribbon{position:absolute;top:-11px;right:14px;padding:2px 10px;border-radius:999px;background:#86C0E0;color:#0E1215;font-size:12px;font-weight:600;letter-spacing:.02em;line-height:1.6}
+.vfs-price.vfs-current{outline:2px solid #86C0E0;outline-offset:3px}
+#site-nav .vfs-acct{position:relative}
+#site-nav .vfs-acct-btn{display:inline-flex;align-items:center;gap:8px;padding:4px 2px;margin:0;background:none;border:0;color:inherit;font:inherit;cursor:pointer;border-radius:999px}
+#site-nav .vfs-acct-btn:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+.vfs-acct-initials{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-size:13px;font-weight:600;letter-spacing:.02em;border:1px solid var(--rule-strong,#c8cfdb);background:var(--sheet,transparent);color:var(--ink,inherit)}
+.vfs-chip{display:inline-flex;align-items:center;gap:3px;padding:1px 9px;border-radius:999px;font-size:11.5px;font-weight:600;letter-spacing:.02em;line-height:1.7;border:1px solid var(--rule-strong,#c8cfdb);white-space:nowrap}
+.vfs-chip-essentials{color:#2F6584;border-color:#2F6584;background:transparent}
+.vfs-chip-standard{background:#2F6584;border-color:#2F6584;color:#fff}
+.vfs-chip-priority{background:#0B0B0D;border-color:#E8B84A;color:#E8B84A;text-transform:uppercase;letter-spacing:.06em;box-shadow:0 0 6px rgba(122,15,20,.6)}
+:root:not([data-theme="light"]) .vfs-chip-essentials{color:#86C0E0;border-color:#86C0E0}
+[data-theme="dark"] .vfs-chip-essentials{color:#86C0E0;border-color:#86C0E0}
+@media (prefers-color-scheme:light){:root:not([data-theme="dark"]) .vfs-chip-essentials{color:#2F6584;border-color:#2F6584}}
+.vfs-star{display:inline-block}
+@media (prefers-reduced-motion:no-preference){.vfs-chip-priority .vfs-star{animation:vfs-shimmer 3.6s ease-in-out infinite}}
+@keyframes vfs-shimmer{0%,100%{opacity:1;text-shadow:none}50%{opacity:.7;text-shadow:0 0 6px #E8B84A}}
+#site-nav .vfs-acct-menu{position:absolute;right:0;top:calc(100% + 8px);z-index:80;display:grid;gap:2px;min-width:210px;margin:0;padding:6px;list-style:none;background:var(--paper,#fff);color:var(--ink,#111);border:1px solid var(--rule-strong,#c8cfdb);border-radius:10px;box-shadow:0 10px 28px rgba(0,0,0,.14)}
+#site-nav .vfs-acct-menu[hidden]{display:none}
+#site-nav .vfs-acct-menu li{margin:0;padding:0;display:block}
+#site-nav .vfs-acct-menu a,#site-nav .vfs-acct-menu button{display:block;width:100%;padding:9px 12px;margin:0;border:0;border-radius:6px;background:none;color:inherit;font:inherit;font-size:15px;text-align:left;text-decoration:none;cursor:pointer;white-space:nowrap}
+#site-nav .vfs-acct-menu a:hover,#site-nav .vfs-acct-menu button:hover,#site-nav .vfs-acct-menu a:focus-visible,#site-nav .vfs-acct-menu button:focus-visible{background:rgba(127,127,127,.14)}
+#site-nav .vfs-acct-menu a::before,#site-nav .vfs-acct-menu a::after{content:none}
+@media (max-width:1100px){#site-nav .vfs-acct-menu{position:static;box-shadow:none;margin-top:6px}}
