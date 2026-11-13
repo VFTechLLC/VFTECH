@@ -11,7 +11,7 @@ Last updated: 13 Nov 2026.
 | Phase | Scope | Status |
 | --- | --- | --- |
 | 0 | Terms of Service v1.0 page, versioned checkout checkbox, `terms_version` in Stripe metadata | **Live** on vftech.io (`55d849e`, deployed 13 Nov) |
-| 1 | Free tier, plan badges and themes, profile editing, features hub, Manage subscription (upgrade / downgrade / cancel / undo), per-plan Terms acceptance | **In review: [PR #9](https://github.com/VFTechLLC/VFTECH/pull/9)**, minus pricing-card states (1b) |
+| 1 | Free tier, plan badges and themes, profile editing, features hub, Manage subscription (upgrade / downgrade / cancel / undo), per-plan Terms acceptance | **Live** (PR #9, deployed 13 Nov), minus pricing-card states (1b) |
 | 1b | Home/features pricing cards: "Your plan" / "Upgrade" states; header initials + plan chip + profile menu | Not started |
 | 2 | Payment rules and suspension; Can't sign in? page | Not started |
 | 3 | Close account, data export, plan history view, honest cancellation, welcome and renewal emails | Not started |
@@ -22,10 +22,10 @@ Last updated: 13 Nov 2026.
 
 - [x] **Review PR #9.** (13 Nov: logic checked; fixed the phone overflow from the billing table and the account page wording in `1c74894`.) Backend: `backend/account.js`, `changePlan` in `backend/billing.js`, routes in `backend/worker.js`, migration `0003_accounts.sql`. Client: plan header, profile, features hub and plan picker in `site/services.js`; styles at the end of `site/services.css`.
 - [x] **Run the browser tests** (13 Nov: `services-browser.mjs` passes 40 views; `/account.html` checked for Free, Essentials, Standard with a pending downgrade and Priority cancelling, at 1366px and 390px. `homepage-browser.mjs` hangs on `main` too, so it is not from this PR.) (they could not run where PR #9 was written): `npm run test:homepage`, `node tests/services-browser.mjs`, and look at `/account.html` signed in as Free, Essentials, Standard and Priority, on a phone width too.
-- [ ] **Stripe test-mode pass** with a `BILLING_TEST_EMAILS` address: subscribe; upgrade (a prorated invoice is paid at once); downgrade (a subscription schedule appears in the dashboard, and the account shows "Changes to … on …"); undo; cancel to Free; resume. Then upgrade with test card `4000 0000 0000 0341` (attaches, then declines): the page must say it was declined and nothing changes.
-- [ ] **Merge PR #9**, then apply the migration: `npx wrangler d1 migrations apply <db> --remote --config backend/wrangler.jsonc`.
-- [ ] **Stripe dashboard → Customer portal:** turn off "Customers can switch plans". Plan changes must go through `/api/billing/change-plan` (proration rules, schedules, Terms acceptance, `plan_events`).
-- [ ] **Deploy** the Worker (`wrangler deploy --config backend/wrangler.jsonc`) and the site (run "Deploy to live site (vftech.io)" by hand; see Repo issues).
+- [x] **Stripe test-mode pass** (13 Nov on live vftech.io with omojolah@: resume, upgrade with a $364.70 prorated invoice, downgrade schedule, undo, cancel, resume and a declined card all behave. The decline message was out of view; fixed in #10.) with a `BILLING_TEST_EMAILS` address: subscribe; upgrade (a prorated invoice is paid at once); downgrade (a subscription schedule appears in the dashboard, and the account shows "Changes to … on …"); undo; cancel to Free; resume. Then upgrade with test card `4000 0000 0000 0341` (attaches, then declines): the page must say it was declined and nothing changes.
+- [x] **Merge PR #9** (13 Nov, `b1de2ad`; migration 0003 applied), then apply the migration: `npx wrangler d1 migrations apply <db> --remote --config backend/wrangler.jsonc`.
+- [x] **Stripe dashboard → Customer portal:** (checked 13 Nov in test mode: already off) turn off "Customers can switch plans". Plan changes must go through `/api/billing/change-plan` (proration rules, schedules, Terms acceptance, `plan_events`).
+- [x] **Deploy** (13 Nov: Worker and site) the Worker (`wrangler deploy --config backend/wrangler.jsonc`) and the site (run "Deploy to live site (vftech.io)" by hand; see Repo issues).
 - [ ] **Client portal links:** for customers with a project portal, `UPDATE customers SET portal_url='https://…' WHERE email='…'` (admin view comes in phase 4).
 - [ ] **Phase 1b**, then phase 2 onward, as below. Tick the Status table as each lands.
 
