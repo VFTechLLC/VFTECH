@@ -196,6 +196,8 @@ export function billing({ HTTPError, json, now, origin, catalog, audit }) {
     if (!event?.id || !event.type) throw new HTTPError(400, 'Invalid signature.');
     const subscriptionId = event.type.startsWith('customer.subscription.') ? event.data?.object?.id : event.type === 'checkout.session.completed' ? event.data?.object?.subscription : null;
     if (typeof subscriptionId === 'string' && /^sub_[A-Za-z0-9]+$/.test(subscriptionId)) await saveSubscription(env, await stripe(env, 'GET', `subscriptions/${subscriptionId}`));
+    if (event.type === 'checkout.session.completed' || event.type === 'customer.subscription.created') await refreshCard(env, event.data?.object?.customer);
+    await paymentEvent(env, event);
     return json({ received: true });
   }
 
@@ -272,5 +274,89 @@ export function billing({ HTTPError, json, now, origin, catalog, audit }) {
     return json({ changed: event });
   }
 
-  return { enabled, live, enabledFor, status, checkout, portal, webhook, changePlan };
+
+  // ---- Payment rules (spec phase 2) ----
+  const DAY = 86400;
+  const subIdOf = (invoice) => invoice?.subscription || invoice?.parent?.subscription_details?.subscription || null;
+  const ownerOf = (env, stripeCustomer) => env.DB.prepare('SELECT id,email,name FROM customers WHERE stripe_customer_id=?').bind(stripeCustomer).first();
+
+  /** The customer's default payment method, kept in D1 for the expiring-card banner and the "no method" rule. */
+  async function refreshCard(env, stripeCustomer) {
+    if (typeof stripeCustomer !== 'string' || !/^cus_\w+$/.test(stripeCustomer)) return;
+    const owner = await ownerOf(env, stripeCustomer);
+    if (!owner) return;
+    const methods = (await stripe(env, 'GET', `customers/${stripeCustomer}/payment_methods`, { limit: 20 })).data || [];
+    const customer = await stripe(env, 'GET', `customers/${stripeCustomer}`);
+    const row = await currentSubscription(env, owner.id);
+    const sub = row ? await stripe(env, 'GET', `subscriptions/${row.id}`) : null;
+    const pick = (value) => (value && typeof value === 'object' ? value.id : value);
+    const chosen = pick(sub?.default_payment_method) || pick(customer.invoice_settings?.default_payment_method) || methods[0]?.id;
+    const card = (methods.find((m) => m.id === chosen) || methods[0])?.card;
+    await env.DB.prepare(`UPDATE subscriptions SET no_payment_method=?,card_last4=?,card_expires=? WHERE customer_id=? AND status IN (${[...LIVE_STATUSES].map(() => '?').join(',')})`)
+      .bind(methods.length ? 0 : 1, card?.last4 ?? null, card ? card.exp_year * 100 + card.exp_month : null, owner.id, ...LIVE_STATUSES).run();
+  }
+
+  /** Webhook events for the payment timeline. Stripe stays the source of truth: each one re-reads what it needs. */
+  async function paymentEvent(env, event) {
+    const object = event.data?.object || {};
+    if (event.type === 'invoice.payment_failed') {
+      const subId = subIdOf(object);
+      if (subId) await env.DB.prepare('UPDATE subscriptions SET past_due_since=COALESCE(past_due_since,?) WHERE id=?').bind(Number(event.created) || now(), subId).run();
+    } else if (event.type === 'invoice.paid') {
+      const subId = subIdOf(object);
+      if (!subId) return;
+      const open = (await stripe(env, 'GET', 'invoices', { subscription: subId, status: 'open', limit: 1 })).data || [];
+      if (!open.length) await env.DB.prepare('UPDATE subscriptions SET past_due_since=NULL,dunning_stage=0 WHERE id=?').bind(subId).run();
+    } else if (event.type === 'charge.dispute.created' || event.type === 'charge.dispute.closed') {
+      const charge = typeof object.charge === 'string' ? await stripe(env, 'GET', `charges/${object.charge}`) : object.charge;
+      const owner = charge?.customer && (await ownerOf(env, charge.customer));
+      // A dispute puts the account on the payment screen; it lifts only when the dispute is won.
+      if (owner && (event.type === 'charge.dispute.created' || object.status === 'won'))
+        await env.DB.prepare('UPDATE subscriptions SET disputed=? WHERE customer_id=?').bind(event.type === 'charge.dispute.created' ? 1 : 0, owner.id).run();
+    } else if (event.type.startsWith('payment_method.') || event.type === 'customer.updated') {
+      await refreshCard(env, event.type === 'customer.updated' ? object.id : object.customer || event.data?.previous_attributes?.customer);
+    }
+  }
+
+  const TIMELINE = [7, 25, 30, 90];
+  const longDate = (seconds) => new Date(seconds * 1000).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+  function timelineEmail(env, step, row) {
+    const plan = plans.get(row.planId)?.name ?? 'VFTech', hi = `Hi ${row.name || 'there'},`, link = `${origin(env)}/account.html`;
+    const suspends = longDate(row.since + 30 * DAY), closes = longDate(row.since + 90 * DAY), sign = 'VF Tech\nkevinvf@vftech.io';
+    const text = {
+      7: [`Payment needed for your ${plan} plan`, `${hi}\n\nWe still haven't been able to collect payment for your ${plan} plan, so work on your plan is paused until it's paid.\n\nSign in to pay what's owed or update your card: ${link}\n\nIf it's still unpaid on ${suspends}, your plan is suspended.\n\n${sign}`],
+      25: [`Your ${plan} plan is suspended in 5 days`, `${hi}\n\nYour ${plan} plan still has an unpaid balance. On ${suspends} it will be suspended and its features switched off.\n\nPay what's owed here: ${link}\n\n${sign}`],
+      30: [`Your ${plan} plan is suspended`, `${hi}\n\nYour ${plan} plan is now suspended because of an unpaid balance. Paying everything owed restores it straight away.\n\nIf it's not paid by ${closes}, your plan will be closed.\n\nPay here: ${link}\n\n${sign}`],
+      90: [`Your ${plan} plan is closed`, `${hi}\n\nThe balance on your ${plan} plan stayed unpaid for 90 days, so we have ended the plan and written the balance off. You can still sign in, and you're welcome back any time.\n\n${sign}`],
+    }[step];
+    return { subject: text[0], text: text[1] };
+  }
+
+  /**
+   * Daily job (cron): moves each past-due subscription along the timeline. Sends the day 7, 25 and 30 emails once
+   * each (only the latest step if several fall due together) and on day 90 ends the plan and writes the balance off.
+   */
+  async function dunning(env, mail) {
+    if (!enabled(env)) return { checked: 0, sent: 0, closed: 0 };
+    const rows = (await env.DB.prepare('SELECT s.id,s.plan_id AS planId,s.past_due_since AS since,s.dunning_stage AS stage,c.id AS customerId,c.email,c.name FROM subscriptions s JOIN customers c ON c.id=s.customer_id WHERE s.past_due_since IS NOT NULL').all()).results || [];
+    let sent = 0, closed = 0;
+    for (const row of rows) {
+      const days = Math.floor((now() - row.since) / DAY);
+      const step = TIMELINE.filter((d) => days >= d && d > row.stage).pop();
+      if (!step) continue;
+      if (step === 90) {
+        try { await stripe(env, 'DELETE', `subscriptions/${row.id}`); } catch (error) { console.error('dunning cancel', row.id, error?.message); }
+        for (const invoice of (await stripe(env, 'GET', 'invoices', { subscription: row.id, status: 'open', limit: 20 })).data || [])
+          await stripe(env, 'POST', `invoices/${invoice.id}/mark_uncollectible`, {});
+        await env.DB.prepare("UPDATE subscriptions SET status='canceled',past_due_since=NULL,dunning_stage=90,updated_at=? WHERE id=?").bind(now(), row.id).run();
+        await audit?.recordEvent(env, row.customerId, 'closed_unpaid', row.planId, 'free');
+        closed++;
+      } else await env.DB.prepare('UPDATE subscriptions SET dunning_stage=? WHERE id=?').bind(step, row.id).run();
+      try { await mail(env, { to: [row.email], ...timelineEmail(env, step, row) }, `dunning-${row.id}-${step}`); sent++; }
+      catch (error) { console.error('dunning email', row.id, step, error?.message); }
+    }
+    return { checked: rows.length, sent, closed };
+  }
+
+  return { enabled, live, enabledFor, status, checkout, portal, webhook, changePlan, dunning, refreshCard };
 }

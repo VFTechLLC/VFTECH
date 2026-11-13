@@ -5,6 +5,32 @@
 // day-30 suspension are phase 2.
 const FEATURE_STATUSES = new Set(['active', 'trialing', 'past_due']);
 export const TIERS = ['free', 'essentials', 'standard', 'priority'];
+export const DAY = 86400;
+
+/**
+ * Payment standing (spec phase 2), from the days since the first failed payment that is still unpaid:
+ *   ok · past_due (days 0-6: banner, features on) · payment_required (7-29: payment screen, features paused)
+ *   · suspended (30-89: features off). Day 90 closes the plan (the daily job in billing.js).
+ * A dispute, or a paid plan left with no payment method, also means payment_required.
+ */
+export function standingOf(row, nowSeconds) {
+  const since = row.pastDueSince ?? null;
+  const days = since === null ? null : Math.max(0, Math.floor((nowSeconds - since) / DAY));
+  const dates = since === null ? {} : { suspendsOn: since + 30 * DAY, closesOn: since + 90 * DAY };
+  if (days !== null) return { standing: days >= 30 ? 'suspended' : days >= 7 ? 'payment_required' : 'past_due', days, ...dates };
+  if (row.disputed) return { standing: 'payment_required', days: null, reason: 'dispute' };
+  if (row.noPaymentMethod) return { standing: 'payment_required', days: null, reason: 'no_payment_method' };
+  if (row.status === 'past_due' || row.status === 'unpaid') return { standing: 'past_due', days: 0 };
+  return { standing: 'ok', days: null };
+}
+/** The default card, and whether to show "your card expires soon": from 30 days before its expiry month. */
+export function cardOf(row, nowSeconds) {
+  if (!row.cardExpires) return null;
+  const year = Math.floor(row.cardExpires / 100), month = row.cardExpires % 100;
+  const monthStart = Date.UTC(year, month - 1, 1) / 1000, monthEnd = Date.UTC(year, month, 1) / 1000;
+  return { last4: row.cardLast4 || '', expires: String(month).padStart(2, '0') + '/' + String(year).slice(-2), expiring: nowSeconds >= monthStart - 30 * DAY, expired: nowSeconds >= monthEnd };
+}
+export const LOCKED = new Set(['payment_required', 'suspended']);
 
 export function accounts({ HTTPError, json, now, catalog, field }) {
   const plans = new Map(catalog.plans.map((plan) => [plan.id, plan]));
@@ -13,10 +39,12 @@ export function accounts({ HTTPError, json, now, catalog, field }) {
   /** The customer's plan as the pages need it: tier drives badges, themes and features. Free = no live plan. */
   async function planFor(env, customerId) {
     const row = await env.DB.prepare(
-      "SELECT plan_id AS planId,status,current_period_end AS periodEnd,cancel_at_period_end AS cancelling,pending_plan_id AS pendingPlanId FROM subscriptions WHERE customer_id=? AND status IN ('active','trialing','past_due','unpaid','incomplete') ORDER BY updated_at DESC LIMIT 1",
+      "SELECT plan_id AS planId,status,current_period_end AS periodEnd,cancel_at_period_end AS cancelling,pending_plan_id AS pendingPlanId,past_due_since AS pastDueSince,disputed,no_payment_method AS noPaymentMethod,card_last4 AS cardLast4,card_expires AS cardExpires FROM subscriptions WHERE customer_id=? AND status IN ('active','trialing','past_due','unpaid','incomplete') ORDER BY updated_at DESC LIMIT 1",
     ).bind(customerId).first();
-    if (!row || !plans.has(row.planId)) return { tier: 'free', name: 'Free', status: 'none' };
-    const tier = FEATURE_STATUSES.has(row.status) ? row.planId : 'free';
+    if (!row || !plans.has(row.planId)) return { tier: 'free', name: 'Free', status: 'none', standing: 'ok' };
+    const standing = standingOf(row, now());
+    // Features follow the timeline: on until day 30 (paused from day 7), off while suspended.
+    const tier = standing.standing === 'suspended' ? 'free' : FEATURE_STATUSES.has(row.status) || row.pastDueSince ? row.planId : 'free';
     return {
       tier,
       planId: row.planId,
@@ -26,6 +54,8 @@ export function accounts({ HTTPError, json, now, catalog, field }) {
       cancelAtPeriodEnd: Boolean(row.cancelling),
       pendingPlanId: row.pendingPlanId || null,
       pendingPlanName: row.pendingPlanId ? name(row.pendingPlanId) : null,
+      ...standing,
+      card: cardOf(row, now()),
     };
   }
 
@@ -37,6 +67,7 @@ export function accounts({ HTTPError, json, now, catalog, field }) {
 
   /** POST /api/account/profile {name, business, phone}. Email changes need a fresh code and come with recovery (phase 2). */
   async function saveProfile(env, active, input) {
+    if (LOCKED.has((await planFor(env, active.customer.id)).standing)) throw new HTTPError(402, 'Settle your payment first: only billing, contact and sign out work until then.');
     const data = { name: field(input.name, 'your name', 80), business: field(input.business, 'the business name', 160), phone: field(input.phone, 'the phone number', 40) };
     if (data.phone && !/^[0-9+().\- ]{7,40}$/.test(data.phone)) throw new HTTPError(400, 'Check the phone number.');
     if ([data.name, data.business].some((value) => /[\r\n<>]/.test(value))) throw new HTTPError(400, 'Remove line breaks and angle brackets.');
@@ -47,6 +78,7 @@ export function accounts({ HTTPError, json, now, catalog, field }) {
   /** GET /api/account/features: what the customer's plan includes, each with its button, plus what higher plans unlock. */
   async function features(env, active) {
     const plan = await planFor(env, active.customer.id);
+    if (LOCKED.has(plan.standing)) return json({ tier: plan.tier, standing: plan.standing, paused: true, included: [], locked: [] });
     const portal = await env.DB.prepare('SELECT portal_url FROM customers WHERE id=?').bind(active.customer.id).first();
     const included = [], locked = [];
     for (const feature of catalog.features || []) {

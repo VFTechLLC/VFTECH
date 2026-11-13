@@ -108,5 +108,5 @@ export default {
       if(request.method==='GET'&&['/api/session','/api/account/requests'].includes(url.pathname)){const active=await session(request,env);if(url.pathname==='/api/session')return json(active?{authenticated:true,customer:active.customer,csrfToken:active.csrfToken,plan:await acct.planFor(env,active.customer.id)}:{authenticated:false});if(!active)throw new HTTPError(401,'Sign in to see your requests.');const result=await env.DB.prepare('SELECT id,business,topics,message,plan_id AS planId,status,created_at AS createdAt FROM contact_requests WHERE email=? ORDER BY created_at DESC LIMIT 50').bind(active.customer.email).all();return json({requests:result.results});}
       throw new HTTPError(404,'This endpoint was not found.');
     }catch(error){return json({error:error instanceof HTTPError?error.message:'The service is temporarily unavailable. Please try again.'},error instanceof HTTPError?error.status:500);}
-  },async scheduled(controller,env,ctx){ctx.waitUntil(cleanup(env));}
+  },async scheduled(controller,env,ctx){ctx.waitUntil(Promise.all([cleanup(env),bills.dunning(env,send).catch(error=>console.error('dunning',error?.message))]));}
 };
