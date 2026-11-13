@@ -1,5 +1,7 @@
 # VFTech client services
 
+> **Current work:** Accounts & Subscriptions. Status, next steps and remaining phases: [`docs/ACCOUNTS-ROADMAP.md`](../docs/ACCOUNTS-ROADMAP.md).
+
 The public GitHub Pages site includes a local site guide, interactive feature
 examples, published prices and an account portal. Real email and account creation
 remain disabled until the business configures delivery. The contact form prepares
