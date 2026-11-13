@@ -51,6 +51,7 @@
       "name": "Standard",
       "price": "$750/mo",
       "kind": "maintenance",
+      "highlight": true,
       "description": "Hosting, domain, SSL, backups: Yes. Uptime monitoring: Yes. Security and dependency updates: Yes. AI update assistant: Yes. Changes handled by us: 3 hrs/mo. Response time: Next business day. Traffic and lead report: Monthly. Search and content work: —Not included"
     },
     {
