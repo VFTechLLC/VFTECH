@@ -104,6 +104,7 @@ export function closing({ HTTPError, json, now, hmac, code, equal, send, codeSec
     } catch (error) { console.error('closing email', customerId, error?.message); }
     await env.DB.batch([
       env.DB.prepare('DELETE FROM sessions WHERE customer_id=?').bind(customerId),
+      env.DB.prepare('DELETE FROM recovery_codes WHERE customer_id=?').bind(customerId),
       env.DB.prepare('DELETE FROM auth_challenges WHERE email=?').bind(customer.email),
       env.DB.prepare('DELETE FROM contact_requests WHERE email=?').bind(customer.email),
       env.DB.prepare('DELETE FROM plan_events WHERE customer_id=?').bind(customerId),

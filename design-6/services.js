@@ -142,7 +142,25 @@
     function showLoggedOut(){document.dispatchEvent(new CustomEvent('vf-session',{detail:null}));home.hidden=true;signin.hidden=false;if(social)social.hidden=false;codeForm.hidden=true;document.getElementById('vf-account-title').textContent='Create an account or sign in';state.csrf='';state.challengeId='';codeForm.reset();}
     async function showAccount(result){state.csrf=result.csrfToken;document.dispatchEvent(new CustomEvent('vf-session',{detail:{authenticated:true,customer:result.customer,plan:result.plan,csrfToken:result.csrfToken}}));signin.hidden=true;if(social)social.hidden=true;codeForm.hidden=true;home.hidden=false;document.getElementById('vf-account-title').textContent='Your customer account';state.customer=result.customer;state.plan=result.plan||{tier:'free',name:'Free',status:'none'};renderTier();renderPaywall();loadProfile();loadFeatures();accountStatus.textContent='You are signed in.';var list=document.getElementById('vf-requests');list.textContent='Loading your requests…';try{var data=await call('account/requests');list.textContent='';if(!data.requests.length)list.append(element('p','vfs-small','No requests yet. Send a project request using this verified email address.'));data.requests.forEach(function(request){var item=element('article','vfs-request'),selectedPlan=plan(request.planId);item.append(element('strong','',request.business||'Project request'),element('p','',new Date(request.createdAt*1000).toLocaleDateString()+' · '+(request.status==='sent'?'Accepted for email delivery':request.status==='failed'?'Delivery failed':'Processing')),element('p','',request.message));if(selectedPlan)item.append(element('p','',selectedPlan.name+' · '+selectedPlan.price));list.append(item);});}catch(error){list.textContent=error.message;}}
     signin.addEventListener('submit',async function(event){event.preventDefault();if(!signin.reportValidity())return;if(!accountCaptcha.get()){accountStatus.textContent='Complete verification to receive a code.';return;}signSubmit.disabled=true;var fd=new FormData(signin);state.email=String(fd.get('email')).trim().toLowerCase();accountStatus.textContent='Requesting your verification code…';try{var result=await call('auth/request-code',{name:fd.get('name'),email:state.email,website:accountHoney.value,turnstileToken:accountCaptcha.get()});state.challengeId=result.challengeId;signin.hidden=true;codeForm.hidden=false;accountStatus.textContent='A code was accepted for delivery to '+state.email+'. Check your email.';document.getElementById('vf-code').focus();}catch(error){accountStatus.textContent=error.message;}finally{accountCaptcha.reset();}});
-    codeForm.addEventListener('submit',async function(event){event.preventDefault();if(!codeForm.reportValidity())return;var submit=codeForm.querySelector('button[type=submit]');submit.disabled=true;accountStatus.textContent='Verifying your code…';try{var result=await call('auth/verify-code',{email:state.email,challengeId:state.challengeId,code:document.getElementById('vf-code').value});codeForm.reset();await showAccount(result);}catch(error){accountStatus.textContent=error.message;}finally{submit.disabled=false;}});
+    // Two-factor sign-in (Accounts spec, phase 4): the code step after any sign-in method, when the customer turned it on.
+    function twoFactorStep(){
+      var old=document.getElementById('vf-2fa-step');if(old)old.remove();
+      signin.hidden=true;if(social)social.hidden=true;codeForm.hidden=true;
+      var form=element('form','vfs-form'),label=element('label','','Code from your authenticator app'),input=element('input'),recovery=false;form.id='vf-2fa-step';
+      input.id='vf-2fa-code';label.htmlFor='vf-2fa-code';input.inputMode='numeric';input.autocomplete='one-time-code';input.required=true;input.maxLength=6;input.pattern='[0-9]{6}';
+      var swap=element('button','vfs-link','Use a recovery code instead');swap.type='button';
+      swap.addEventListener('click',function(){recovery=!recovery;label.textContent=recovery?'Recovery code':'Code from your authenticator app';input.value='';input.inputMode=recovery?'text':'numeric';input.autocomplete=recovery?'off':'one-time-code';input.maxLength=recovery?9:6;input.pattern=recovery?'[A-Za-z2-7]{4}[- ]?[A-Za-z2-7]{4}':'[0-9]{6}';swap.textContent=recovery?'Use the app code instead':'Use a recovery code instead';input.focus();});
+      var go=element('button','vfs-button','Verify');go.type='submit';
+      var cancel=element('button','vfs-button vfs-secondary','Cancel');cancel.type='button';
+      cancel.addEventListener('click',async function(){try{await call('auth/2fa/cancel',{});}catch{}form.remove();signin.hidden=false;if(social)social.hidden=false;accountStatus.textContent='Sign-in cancelled.';});
+      var help=element('a','vfs-small','Lost your phone and your recovery codes?');help.href='signin-help.html#two-factor';
+      form.append(element('p','','Two-factor sign-in is on for this account. Enter the 6-digit code from your authenticator app.'),label,input,swap,go,cancel,help);
+      form.addEventListener('submit',async function(event){event.preventDefault();if(!form.reportValidity())return;go.disabled=true;accountStatus.textContent='Checking your code…';
+        try{var result=await call('auth/2fa',recovery?{recoveryCode:input.value}:{code:input.value});form.remove();await showAccount(result);}
+        catch(error){accountStatus.textContent=error.message;go.disabled=false;input.select();}});
+      codeForm.after(form);input.focus();accountStatus.textContent='Enter your two-factor code to finish signing in.';
+    }
+    codeForm.addEventListener('submit',async function(event){event.preventDefault();if(!codeForm.reportValidity())return;var submit=codeForm.querySelector('button[type=submit]');submit.disabled=true;accountStatus.textContent='Verifying your code…';try{var result=await call('auth/verify-code',{email:state.email,challengeId:state.challengeId,code:document.getElementById('vf-code').value});codeForm.reset();if(result.twoFactor){twoFactorStep();return;}await showAccount(result);}catch(error){accountStatus.textContent=error.message;}finally{submit.disabled=false;}});
     document.getElementById('vf-change-email').addEventListener('click',function(){showLoggedOut();accountCaptcha.reset();accountStatus.textContent='Enter your email and complete verification for a new code.';document.getElementById('vf-email').focus();});
     document.getElementById('vf-logout').addEventListener('click',async function(){this.disabled=true;try{await call('auth/logout',{},state.csrf);showLoggedOut();accountCaptcha.reset();accountStatus.textContent='You are signed out.';}catch(error){accountStatus.textContent=error.message;}finally{this.disabled=false;}});
     // Billing (backend/billing.js): the customer's plan, Manage billing (Stripe's portal: card, invoices, cancel) and
@@ -246,6 +264,48 @@
           catch(error){note.textContent=error.message;later.disabled=now.disabled=false;}});
       });
     });
+    var tfaBox=document.getElementById('vf-2fa');
+    function codeInput(id,text){var label=element('label','',text),input=element('input');input.id=id;label.htmlFor=id;input.required=true;input.autocomplete='one-time-code';input.maxLength=9;return [label,input];}
+    function showRecoveryCodes(body,codes,intro){
+      body.textContent='';body.append(element('p','',intro),element('p','vfs-small','Each code works once if you lose your phone. Keep them somewhere safe, like a password manager. We can’t show them again.'));
+      var list=element('ul','vfs-codes');codes.forEach(function(c){list.append(element('li','',c));});body.append(list);
+      var row=element('div','vfs-actions'),save=element('button','vfs-button vfs-secondary','Download codes'),copy=element('button','vfs-button vfs-secondary','Copy'),done=element('button','vfs-button','I’ve saved them');[save,copy,done].forEach(function(b){b.type='button';});
+      var text='VFTech recovery codes for '+(state.customer&&state.customer.email||'your account')+'\nEach code works once.\n\n'+codes.join('\n')+'\n';
+      save.addEventListener('click',function(){var a=element('a');a.href=URL.createObjectURL(new Blob([text],{type:'text/plain'}));a.download='vftech-recovery-codes.txt';document.body.append(a);a.click();a.remove();});
+      copy.addEventListener('click',async function(){try{await navigator.clipboard.writeText(text);copy.textContent='Copied';}catch{copy.textContent='Copy failed';}});
+      done.addEventListener('click',renderTwoFactor);row.append(save,copy,done);body.append(row);
+    }
+    async function startTwoFactorSetup(body){
+      body.textContent='Preparing…';
+      try{var made=await call('account/2fa/setup',{},state.csrf);body.textContent='';
+        var qr=element('img','vfs-2fa-qr');qr.alt='QR code for your authenticator app';qr.width=180;qr.height=180;qr.src='data:image/svg+xml;base64,'+btoa(made.qrSvg);
+        var open=element('a','vfs-small','On this phone? Open it in your authenticator app');open.href=made.uri;
+        var key=element('p','vfs-small');key.append(document.createTextNode('Can’t scan? Enter this key: '),element('code','vfs-2fa-key',made.key));
+        var form=element('form','vfs-form'),parts=codeInput('vf-2fa-enable','Then enter the 6-digit code it shows'),go=element('button','vfs-button','Turn on'),back=element('button','vfs-button vfs-secondary','Cancel');go.type='submit';back.type='button';parts[1].inputMode='numeric';parts[1].maxLength=6;parts[1].pattern='[0-9]{6}';
+        back.addEventListener('click',renderTwoFactor);form.append(parts[0],parts[1],go,back);
+        form.addEventListener('submit',async function(event){event.preventDefault();if(!form.reportValidity())return;go.disabled=true;
+          try{var on=await call('account/2fa/enable',{code:parts[1].value},state.csrf);accountStatus.textContent='Two-factor sign-in is on.';showRecoveryCodes(body,on.recoveryCodes,'Two-factor sign-in is on. Here are your ten recovery codes.');}
+          catch(error){accountStatus.textContent=error.message;go.disabled=false;parts[1].select();}});
+        body.append(element('p','','Scan this with an authenticator app such as Google Authenticator, Microsoft Authenticator or 1Password.'),qr,open,key,form);parts[1].focus();
+      }catch(error){body.textContent=error.message;}
+    }
+    async function renderTwoFactor(){
+      var body=document.getElementById('vf-2fa-body');if(!body)return;body.textContent='Loading…';
+      try{var st=await call('account/2fa');body.textContent='';
+        if(!st.available){body.append(element('p','vfs-small','Two-factor sign-in is coming soon.'));return;}
+        if(!st.enabled){body.append(element('p','vfs-small','Optional. After you sign in, we also ask for a code from an authenticator app on your phone, so a stolen email or password isn’t enough to get in.'));var on=element('button','vfs-button','Turn on two-factor');on.type='button';on.addEventListener('click',function(){startTwoFactorSetup(body);});body.append(on);return;}
+        body.append(element('p','vfs-small','On since '+shortDate(st.enabledAt)+'. '+st.recoveryCodesLeft+' of 10 recovery codes left.'));
+        var form=element('form','vfs-form'),parts=codeInput('vf-2fa-confirm','To make changes, enter a code from your app or a recovery code'),fresh=element('button','vfs-button vfs-secondary','Make new recovery codes'),off=element('button','vfs-button vfs-secondary','Turn off two-factor');fresh.type='submit';off.type='submit';
+        form.append(parts[0],parts[1],fresh,off);
+        var which=null;fresh.addEventListener('click',function(){which='regenerate';});off.addEventListener('click',function(){which='disable';});
+        form.addEventListener('submit',async function(event){event.preventDefault();if(!form.reportValidity())return;var value=parts[1].value.trim(),payload=/^\d{6}$/.test(value)?{code:value}:{recoveryCode:value};fresh.disabled=off.disabled=true;
+          try{if(which==='disable'){await call('account/2fa/disable',payload,state.csrf);accountStatus.textContent='Two-factor sign-in is off.';renderTwoFactor();}
+            else{var made=await call('account/2fa/recovery-codes',payload,state.csrf);accountStatus.textContent='New recovery codes made. The old ones no longer work.';showRecoveryCodes(body,made.recoveryCodes,'Here are your new recovery codes. The old ones no longer work.');}}
+          catch(error){accountStatus.textContent=error.message;fresh.disabled=off.disabled=false;parts[1].select();}});
+        body.append(form);
+      }catch(error){body.textContent=error.message;}
+    }
+    if(tfaBox)tfaBox.addEventListener('toggle',function(){if(tfaBox.open)renderTwoFactor();});
     var historyBox=document.getElementById('vf-history');
     if(historyBox)historyBox.addEventListener('toggle',async function(){
       if(!historyBox.open)return;var body=document.getElementById('vf-history-body');body.textContent='Loading…';
@@ -361,7 +421,7 @@
       try{var data=await call('billing');if(!data.enabled){billingBox.hidden=true;return;}if(!settings.billingEnabled)showSubscribe();renderBilling(data);}catch(error){billingBody.textContent=error.message;}
     }
     var baseShowAccount=showAccount;showAccount=async function(result){await baseShowAccount(result);loadBilling();};
-    call('session').then(function(result){if(result.authenticated)showAccount(result);}).catch(function(){accountStatus.textContent='The account service could not be reached. Please try again later.';signSubmit.disabled=true;});
+    call('session').then(function(result){if(result.authenticated)showAccount(result);else if(result.twoFactor)twoFactorStep();}).catch(function(){accountStatus.textContent='The account service could not be reached. Please try again later.';signSubmit.disabled=true;});
   }
   // "Can't sign in?" page (Accounts spec, phase 2): a code only for existing accounts (same answer either way), and a
   // recovery request for customers who lost access to their email.
@@ -375,7 +435,7 @@
         try{var result=await call('auth/request-code',{email:help.email,existingOnly:true,website:helpHoney.value,turnstileToken:helpCaptcha.get()});help.challengeId=result.challengeId;helpForm.hidden=true;helpCode.hidden=false;helpStatus.textContent='If there’s an account for '+help.email+', a code is on its way. Check your email.';document.getElementById('vf-help-code-input').focus();}
         catch(error){helpStatus.textContent=error.message;}finally{helpCaptcha.reset();}});
       helpCode.addEventListener('submit',async function(event){event.preventDefault();if(!helpCode.reportValidity())return;var button=helpCode.querySelector('button[type=submit]');button.disabled=true;helpStatus.textContent='Checking the code…';
-        try{await call('auth/verify-code',{email:help.email,challengeId:help.challengeId,code:document.getElementById('vf-help-code-input').value});helpStatus.textContent='You’re signed in. Opening your account…';location.href='account.html';}
+        try{await call('auth/verify-code',{email:help.email,challengeId:help.challengeId,code:document.getElementById('vf-help-code-input').value});helpStatus.textContent='Code accepted. Opening your account…';location.href='account.html';}
         catch(error){helpStatus.textContent=error.message;button.disabled=false;}});
       var recoverSubmit=recoverForm.querySelector('button[type=submit]'),recoverCaptcha=verification(document.getElementById('vf-recover-captcha'),'account',recoverSubmit,recoverStatus),recoverHoney=trap(recoverForm);
       recoverForm.addEventListener('submit',async function(event){event.preventDefault();if(!recoverForm.reportValidity())return;var fd=new FormData(recoverForm);recoverSubmit.disabled=true;recoverStatus.hidden=false;recoverStatus.textContent='Sending your request…';

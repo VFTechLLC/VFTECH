@@ -142,3 +142,23 @@ Until the admin view (phase 4), handle them in the D1 console:
    `DELETE FROM sessions WHERE customer_id=(SELECT id FROM customers WHERE email='<new>');`
    Then update the email on the Stripe customer too.
 3. Log it: `UPDATE recovery_requests SET status='done',handled_by='<your email>',handled_at=unixepoch() WHERE id='<id>';`
+
+## Two-factor sign-in (phase 4c)
+
+Optional for customers: an authenticator-app code (TOTP) after any sign-in, plus ten single-use recovery codes
+(`backend/twofactor.js`). It needs the `TOTP_KEY` Worker secret (32 random bytes, base64), which encrypts the stored
+secrets. Without it, the account page says two-factor is "coming soon".
+
+    node -e "console.log(require('crypto').randomBytes(32).toString('base64'))" | npx wrangler secret put TOTP_KEY
+
+Never change or delete `TOTP_KEY` once customers use two-factor: their codes would stop working, and only recovery
+codes or the staff steps below would get them in.
+
+**Lost device and no recovery codes:** the customer uses the recovery form on the Can't sign in? page. Verify them as
+in step 1 above, then turn two-factor off and end every sign-in, and log it as in step 3:
+
+    UPDATE customers SET totp_secret=NULL,totp_pending=NULL,totp_pending_at=NULL,totp_enabled_at=NULL,totp_last_step=0 WHERE email='<email>';
+    DELETE FROM recovery_codes WHERE customer_id=(SELECT id FROM customers WHERE email='<email>');
+    DELETE FROM sessions WHERE customer_id=(SELECT id FROM customers WHERE email='<email>');
+
+Staff always use two-factor: the admin view (phase 4d) sits behind Cloudflare Access with two-factor required.
