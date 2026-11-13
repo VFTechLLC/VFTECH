@@ -4,6 +4,7 @@ import {billing} from './billing.js';
 import {accounts} from './account.js';
 import {closing} from './closing.js';
 import {twoFactor} from './twofactor.js';
+import {admin} from './admin.js';
 const COOKIE='__Host-vftech-session',SESSION_SECONDS=7*24*3600,CODE_SECONDS=600,MFA_SECONDS=600;
 const encoder=new TextEncoder();
 const TOPICS=new Set(['Website rebuild','Platform migration','AI integration','Support plan','Advisory or fractional leadership','Not sure yet']);
@@ -99,6 +100,8 @@ const acct=accounts({HTTPError,json,now,catalog,field});
 const bills=billing({HTTPError,json,now,origin,catalog,audit:acct,mail:send});
 // Closing an account and downloading its data (backend/closing.js).
 const mfa=twoFactor({HTTPError,json,now,hmac,digest,equal,send,limit,origin});
+// Staff admin view (backend/admin.js) at /api/admin, behind Cloudflare Access.
+const adm=admin({HTTPError,json,now,origin,catalog,send,stripe:bills.stripe,planFor:acct.planFor,meter:acct.meter,recordEvent:acct.recordEvent});
 const shut=closing({HTTPError,json,now,hmac,code,equal,send,codeSeconds:CODE_SECONDS,stripe:bills.stripe,planFor:acct.planFor,recordEvent:acct.recordEvent});
 async function ipHash(request,env){return hmac(env,'ip:'+(request.headers.get('CF-Connecting-IP')||'unknown'));}
 async function signedIn(request,env,csrf){const active=await session(request,env);if(!active)throw new HTTPError(401,'Sign in to continue.');if(csrf&&!equal(request.headers.get('X-CSRF-Token'),active.csrfToken))throw new HTTPError(403,'Refresh your account page and try again.');return active;}
@@ -138,8 +141,10 @@ export default {
     try{if(request.method==='GET'&&url.pathname==='/api/config')return json(config(env));if(request.method==='GET'&&url.pathname==='/api/prices')return json(catalog);if(origin(env)&&url.origin!==origin(env))throw new HTTPError(403,'Use the configured VFTech site.');
       const provider=request.method==='GET'&&url.pathname.match(/^\/api\/auth\/(google|microsoft)\/(start|callback)$/);if(provider)return provider[2]==='start'?await oauthStart(request,env,provider[1]):await oauthCallback(request,env,provider[1],url);
       if(request.method==='POST'&&url.pathname==='/api/stripe/webhook')return await bills.webhook(request,env);
+      if(url.pathname==='/api/admin'||url.pathname.startsWith('/api/admin/')){if(request.method==='POST')sameOrigin(request,env);return await adm.handle(request,env,url,()=>body(request));}
       if(request.method==='GET'&&url.pathname==='/api/billing')return await bills.status(env,await signedIn(request,env,false));
       if(request.method==='GET'&&url.pathname==='/api/account/profile')return await acct.getProfile(env,await signedIn(request,env,false));
+      if(request.method==='GET'&&url.pathname==='/api/account/hours')return await acct.hours(env,await signedIn(request,env,false));
       if(request.method==='GET'&&url.pathname==='/api/account/2fa')return await mfa.status(env,await signedIn(request,env,false));
       if(request.method==='GET'&&url.pathname==='/api/account/history')return await acct.history(env,await signedIn(request,env,false));
       if(request.method==='GET'&&url.pathname==='/api/account/export')return await shut.exportData(env,await signedIn(request,env,false));

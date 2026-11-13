@@ -36,8 +36,14 @@ export function accounts({ HTTPError, json, now, catalog, field }) {
   const plans = new Map(catalog.plans.map((plan) => [plan.id, plan]));
   const name = (id) => (id === 'free' ? 'Free' : plans.get(id)?.name ?? id);
 
-  /** The customer's plan as the pages need it: tier drives badges, themes and features. Free = no live plan. */
+  /** The customer's plan as the pages need it: tier drives badges, themes and features. Free = no live plan.
+   *  A staff hold (admin view, spec phase 4) suspends the account whatever the billing says. */
   async function planFor(env, customerId) {
+    const plan = await billingPlan(env, customerId);
+    const hold = await env.DB.prepare('SELECT suspended_at AS at FROM customers WHERE id=?').bind(customerId).first();
+    return hold?.at ? { ...plan, tier: 'free', standing: 'suspended', reason: 'staff', suspendedAt: hold.at } : plan;
+  }
+  async function billingPlan(env, customerId) {
     const row = await env.DB.prepare(
       "SELECT plan_id AS planId,status,current_period_end AS periodEnd,cancel_at_period_end AS cancelling,pending_plan_id AS pendingPlanId,billing_interval AS interval,pending_interval AS pendingInterval,past_due_since AS pastDueSince,disputed,no_payment_method AS noPaymentMethod,card_last4 AS cardLast4,card_expires AS cardExpires FROM subscriptions WHERE customer_id=? AND status IN ('active','trialing','past_due','unpaid','incomplete') ORDER BY updated_at DESC LIMIT 1",
     ).bind(customerId).first();
@@ -115,5 +121,33 @@ export function accounts({ HTTPError, json, now, catalog, field }) {
     await env.DB.prepare('INSERT INTO terms_acceptances (id,customer_id,item_id,version,ip_hash,accepted_at) VALUES (?,?,?,?,?,?)').bind(crypto.randomUUID(), customerId, itemId, String(catalog.termsVersion || '1.0'), ipHash || '', now()).run();
   }
 
-  return { planFor, getProfile, saveProfile, features, recordEvent, recordTerms, history };
+  // ---- Hours meter (spec phase 4): staff log time in the admin view; the plan's monthly hours are totalled for the
+  // current month of the billing period (annual plans too: the allowance is monthly), with a warning at 80%. ----
+  const includedHours = (planId) => { const f = (catalog.features || []).find((x) => x.id === 'hours'); return Number(/[\d.]+/.exec(f?.detail?.[planId] || '')?.[0] || 0); };
+  const isoDay = (seconds) => new Date(seconds * 1000).toISOString().slice(0, 10);
+  /** The month of the billing period that contains now: anchored on the renewal day, or the calendar month on Free. */
+  function meterPeriod(periodEnd, at = now()) {
+    if (!periodEnd) { const d = new Date(at * 1000); const start = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1) / 1000; return { start, end: Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1) / 1000 }; }
+    const anchor = new Date(periodEnd * 1000);
+    const shift = (months) => { const d = new Date(anchor); const day = d.getUTCDate(); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() + months); const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate(); d.setUTCDate(Math.min(day, last)); return Math.floor(d.getTime() / 1000); };
+    let k = 0;
+    while (shift(k) > at && k > -40) k--;
+    while (shift(k + 1) <= at && k < 40) k++;
+    return { start: shift(k), end: shift(k + 1) };
+  }
+  async function meter(env, customerId, plan) {
+    plan = plan || (await planFor(env, customerId));
+    const period = meterPeriod(plan.periodEnd, now()), from = isoDay(period.start), to = isoDay(period.end);
+    const entries = (await env.DB.prepare('SELECT id,work_date AS date,minutes,note FROM time_entries WHERE customer_id=? AND work_date>=? AND work_date<? ORDER BY work_date DESC,created_at DESC').bind(customerId, from, to).all()).results || [];
+    const included = plan.planId && plan.status !== 'none' ? includedHours(plan.planId) : 0;
+    const used = entries.reduce((sum, e) => sum + e.minutes, 0) / 60;
+    return { included, used: Math.round(used * 100) / 100, periodStart: period.start, periodEnd: period.end, warn: included > 0 && used >= included * 0.8, over: included > 0 && used > included, extraRate: 250, entries: entries.map((e) => ({ id: e.id, date: e.date, hours: e.minutes / 60, note: e.note })) };
+  }
+  /** GET /api/account/hours */
+  async function hours(env, active) {
+    const m = await meter(env, active.customer.id);
+    return json({ ...m, entries: m.entries.map(({ id, ...rest }) => rest) });
+  }
+
+  return { planFor, getProfile, saveProfile, features, recordEvent, recordTerms, history, hours, meter, meterPeriod, includedHours };
 }
