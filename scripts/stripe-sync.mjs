@@ -10,7 +10,7 @@
 //   node scripts/stripe-sync.mjs --apply    make the changes
 // The key comes from STRIPE_SECRET_KEY or backend/.dev.vars. Only sk_test_ keys unless --live is given too.
 import {readFileSync, existsSync} from 'node:fs';
-import {formEncode, lookupKey, oneTimeKey, fixedPriceCents, ANNUAL_MONTHS} from '../backend/billing.js';
+import {formEncode, lookupKey, oneTimeKey, fixedPriceCents, ANNUAL_MONTHS, CHECKOUT_METHODS} from '../backend/billing.js';
 
 const apply = process.argv.includes('--apply'), live = process.argv.includes('--live');
 const catalog = JSON.parse(readFileSync(new URL('../backend/catalog.json', import.meta.url), 'utf8'));
@@ -59,6 +59,19 @@ for (const plan of items) {
     await stripe('POST', 'prices', {product: product.id, currency: 'usd', unit_amount: amount, ...(plan.monthly ? {recurring: {interval: plan.interval}} : {}), lookup_key: lookup, transfer_lookup_key: 'true', tax_behavior: 'exclusive', nickname: `${plan.name} ${plan.monthly ? (plan.interval === 'year' ? 'annual' : 'monthly') : 'one-time'}`});
     if (current) await stripe('POST', `prices/${current.id}`, {active: 'false'});
   }
+}
+
+// Checkout's payment methods (spec phase 4): cards (Amex and Discover included), ACH and Google Pay; everything else
+// off, Apple Pay included until Sign in with Apple exists. Checkout uses this configuration by name.
+const wanted = {card: 'on', us_bank_account: 'on', google_pay: 'on', apple_pay: 'off', link: 'off', cashapp: 'off', amazon_pay: 'off', klarna: 'off', affirm: 'off', samsung_pay: 'off', bancontact: 'off', eps: 'off', blik: 'off', kakao_pay: 'off', naver_pay: 'off', payco: 'off', pay_by_bank: 'off', pix: 'off', promptpay: 'off', mb_way: 'off', satispay: 'off'};
+const configs = (await stripe('GET', 'payment_method_configurations', {limit: 100})).data;
+const config = configs.find((c) => c.name === CHECKOUT_METHODS && c.active);
+const drift = config ? Object.entries(wanted).filter(([k, v]) => (config[k]?.display_preference?.preference ?? config[k]?.display_preference?.value ?? 'off') !== v).map(([k]) => k) : Object.keys(wanted);
+if (!drift.length) console.log(`ok      payment methods "${CHECKOUT_METHODS}" (${config.id}): cards, ACH, Google Pay`);
+else {
+  say(`${config ? 'update' : 'create'} payment methods "${CHECKOUT_METHODS}": cards, ACH, Google Pay on; Apple Pay and the rest off`);
+  const params = Object.fromEntries(Object.entries(wanted).map(([k, v]) => [k, {display_preference: {preference: v}}]));
+  if (apply) await stripe('POST', config ? `payment_method_configurations/${config.id}` : 'payment_method_configurations', config ? params : {name: CHECKOUT_METHODS, ...params});
 }
 
 // Customer Portal (the default configuration): invoices, card updates, cancel at period end, no plan switching yet.

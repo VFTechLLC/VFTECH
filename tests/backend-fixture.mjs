@@ -17,6 +17,7 @@ export function fixture(){
       if(method==='POST'&&path==='customers'){const id='cus_'+(s.customers.length+1);s.customers.push({id,email:params.get('email')});return Response.json({id});}
       if(method==='GET'&&path==='prices'){const price=s.prices[params.get('lookup_keys[0]')];return Response.json({data:price?[price]:[]});}
       if(method==='POST'&&path==='checkout/sessions'){s.sessions.push(Object.fromEntries(params));return Response.json({id:'cs_test',url:'https://checkout.stripe.test/cs_test'});}
+      if(method==='GET'&&path==='payment_method_configurations')return Response.json({data:s.paymentConfigs||[]});
       if(method==='POST'&&path==='billing_portal/sessions')return Response.json({url:'https://billing.stripe.test/p_'+params.get('customer')});
       if(method==='GET'&&path==='subscriptions')return Response.json({data:s.subscriptions.filter(x=>x.customer===params.get('customer'))});
       if(method==='GET'&&path.startsWith('subscriptions/')){const sub=s.subscriptions.find(x=>x.id===path.split('/')[1]);return sub?Response.json(sub):Response.json({error:{type:'invalid_request_error'}},{status:404});}

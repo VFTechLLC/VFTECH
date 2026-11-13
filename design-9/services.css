@@ -119,3 +119,6 @@
 /* Monthly / annual toggle (Accounts spec, phase 4). */
 .vfs-interval{margin:0 0 26px;flex-wrap:wrap}
 .vfs-billing .vfs-interval{margin:12px 0 0}
+
+/* Net-30 invoices on request (Accounts spec, phase 4). */
+.vfs-net30{display:grid;gap:8px;justify-items:start;margin:4px 0 14px}

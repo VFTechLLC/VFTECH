@@ -86,7 +86,7 @@ test('Billing status shows the live subscription and invoices with tax, and bloc
   f.state.stripe.invoices.push({id: 'in_draft', customer: 'cus_1', status: 'draft', total: 1, created: 1});
   const status = await f.request('billing', undefined, as(login, false));
   assert.equal(status.status, 200);
-  assert.deepEqual(status.body.subscription, {id: 'sub_1', planId: 'standard', planName: 'Standard', status: 'active', currentPeriodEnd: 1900000000, cancelAtPeriodEnd: false, pendingPlanId: null, interval: 'month', pendingInterval: null, pendingPlanName: null});
+  assert.deepEqual(status.body.subscription, {id: 'sub_1', planId: 'standard', planName: 'Standard', status: 'active', currentPeriodEnd: 1900000000, cancelAtPeriodEnd: false, pendingPlanId: null, interval: 'month', pendingInterval: null, collectionMethod: 'charge_automatically', pendingPlanName: null});
   assert.deepEqual(status.body.invoices.map((invoice) => [invoice.number, invoice.total, invoice.tax, invoice.status]), [['VF-0001', 81975, 6975, 'paid']]);
   assert.equal((await f.request('billing/checkout', {planId: 'priority', acceptTerms: true}, as(login))).status, 409);
   f.env.BILLING_TEST_EMAILS = 'one@example.test,two@example.test';

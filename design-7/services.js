@@ -170,7 +170,7 @@
       var label=element('label','vfs-check'),box=element('input');box.type='checkbox';box.required=true;box.id='vf-accept-terms';label.append(box,document.createTextNode(' I have read and agree to the '));var link=element('a','','Terms of Service');link.href='terms.html';link.target='_blank';label.append(link,document.createTextNode(' (version '+(catalog.termsVersion||'1.0')+')'+(recurring?', including section 5 for '+chosen.name+'. Renews automatically; no refunds for partial periods.':'.')));
       var go=element('button','vfs-button','Continue to secure payment');go.type='submit';
       var other=element('button','vfs-button vfs-secondary',recurring?'Choose another plan':'Not now');other.type='button';other.addEventListener('click',function(){try{sessionStorage.removeItem('vf-subscribe');}catch{}renderBilling({enabled:true,subscription:null,invoices:[]});});
-      form.append(label,go,other);
+      form.append(element('p','vfs-small','Pay by card (Visa, Mastercard, Amex, Discover), Google Pay, or US bank account (ACH).'),label,go,other);
       form.addEventListener('submit',function(event){event.preventDefault();if(!form.reportValidity())return;try{sessionStorage.removeItem('vf-subscribe');sessionStorage.removeItem('vf-subscribe-interval');}catch{}accountStatus.textContent='Opening secure payment…';goTo('billing/checkout',recurring?{itemId:id,interval:interval,acceptTerms:true}:{itemId:id,acceptTerms:true},go);});
       return form;
     }
@@ -252,7 +252,7 @@
       try{var events=(await call('account/history')).events||[];body.textContent='';
         if(!events.length){body.append(element('p','vfs-small','No plan changes yet.'));return;}
         var list=element('ul','vfs-history');
-        events.forEach(function(e){var a=e.fromName,b=e.toName;var text={subscribed:'Started '+b,upgraded:'Upgraded from '+a+' to '+b,downgrade_scheduled:'Scheduled a switch from '+a+' to '+b,switch_scheduled:'Scheduled a switch from '+a+' to '+b,switched_annual:'Switched '+a+' to annual billing',change_undone:'Kept '+a+' (scheduled switch cancelled)',cancel_scheduled:'Cancelled '+a+(e.reason?' ('+e.reason+')':''),resumed:'Kept '+a+' (cancellation undone)',closed_unpaid:a+' closed after 90 days unpaid',account_close_scheduled:'Asked to close the account',account_close_cancelled:'Kept the account'}[e.type]||e.type;
+        events.forEach(function(e){var a=e.fromName,b=e.toName;var text={subscribed:'Started '+b,upgraded:'Upgraded from '+a+' to '+b,downgrade_scheduled:'Scheduled a switch from '+a+' to '+b,switch_scheduled:'Scheduled a switch from '+a+' to '+b,switched_annual:'Switched '+a+' to annual billing',net30_requested:'Asked to pay by invoice (net 30)',change_undone:'Kept '+a+' (scheduled switch cancelled)',cancel_scheduled:'Cancelled '+a+(e.reason?' ('+e.reason+')':''),resumed:'Kept '+a+' (cancellation undone)',closed_unpaid:a+' closed after 90 days unpaid',account_close_scheduled:'Asked to close the account',account_close_cancelled:'Kept the account'}[e.type]||e.type;
           var li=element('li');li.append(element('span','vfs-small',shortDate(e.at)),document.createTextNode(' '+text));list.append(li);});
         body.append(list);}
       catch(error){body.textContent=error.message;}
@@ -317,6 +317,15 @@
         catch(error){accountStatus.textContent=error.message;note.textContent=error.message;go.disabled=false;}});
       anchor.after(form);box?box.focus():go.focus();
     }
+    // Net-30 invoices (Accounts spec, phase 4): Priority and annual customers can ask to pay each invoice within 30 days.
+    function net30Box(n){
+      var box=element('div','vfs-net30');box.id='vf-net30';
+      if(n.active){box.append(element('p','vfs-small','Billed by invoice: each invoice is emailed to you and is due 30 days after it’s sent.'));return box;}
+      if(n.requestedAt){box.append(element('p','vfs-small','You asked to pay by invoice on '+day(n.requestedAt)+'. We’ll confirm by email.'));return box;}
+      var text=element('p','vfs-small','Prefer to pay by invoice? Priority and annual plans can pay each invoice within 30 days instead of an automatic charge.'),ask=element('button','vfs-button vfs-secondary','Ask for invoice billing');ask.type='button';
+      ask.addEventListener('click',async function(){ask.disabled=true;try{var r=await call('billing/net30',{},state.csrf);box.replaceWith(net30Box({requestedAt:r.requestedAt}));accountStatus.textContent='Request sent. We’ll confirm invoice billing by email.';}catch(error){accountStatus.textContent=error.message;ask.disabled=false;}});
+      box.append(text,ask);return box;
+    }
     function renderBilling(data){
       billingBody.textContent='';
       var sub=data.subscription;
@@ -327,6 +336,7 @@
         if(sub.status==='past_due'||sub.status==='unpaid')billingBody.append(element('p','vfs-status','Your last payment didn’t go through. Update your payment method below to keep the plan.'));
         if(sub.pendingPlanName&&sub.currentPeriodEnd)billingBody.append(element('p','vfs-small','Switching to '+sub.pendingPlanName+(sub.pendingInterval&&sub.pendingInterval!==sub.interval?(sub.pendingInterval==='year'?' annual':' monthly'):'')+' on '+day(sub.currentPeriodEnd)+'.'));
         if(sub.status==='active'||sub.status==='trialing')billingBody.append(planPicker(sub));
+        if(data.net30&&data.net30.eligible)billingBody.append(net30Box(data.net30));
       }
       if(wantedPlan&&!(sub&&monthly(wantedPlan))){billingBody.append(subscribeForm(wantedPlan));}
       else if(sub){if(wantedPlan)accountStatus.textContent='You already have a plan. Use Manage billing to change or cancel it.';}
