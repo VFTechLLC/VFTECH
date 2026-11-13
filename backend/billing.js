@@ -7,6 +7,11 @@
 const STRIPE_API = 'https://api.stripe.com/v1/';
 const LIVE_STATUSES = new Set(['active', 'trialing', 'past_due', 'unpaid', 'incomplete']);
 const SIGNATURE_TOLERANCE = 300;
+/** The Stripe payment method configuration Checkout uses (made by scripts/stripe-sync.mjs): cards (Visa, Mastercard,
+ *  Amex, Discover), ACH bank debit and Google Pay. No Apple Pay until Sign in with Apple exists; no Link, Cash App,
+ *  Amazon Pay, Klarna or other methods; no PayPal (Stripe doesn't process it for US businesses). Spec phase 4. */
+export const CHECKOUT_METHODS = 'VFTech checkout';
+const methodConfigs = new Map();
 
 export const lookupKey = (planId, interval = 'month') => `vftech_${planId}_${interval === 'year' ? 'yearly' : 'monthly'}`;
 /** Annual plans cost ten times the monthly price: two months free (spec phase 4). */
@@ -100,23 +105,23 @@ export function billing({ HTTPError, json, now, origin, catalog, audit, mail }) 
     const item = subscription.items?.data?.[0];
     const planId = planFromLookupKey(item?.price?.lookup_key) || subscription.metadata?.plan_id || 'unknown';
     await env.DB.prepare(
-      'INSERT INTO subscriptions (id,customer_id,plan_id,billing_interval,status,current_period_end,cancel_at_period_end,updated_at) VALUES (?,?,?,?,?,?,?,?) ' +
-        'ON CONFLICT(id) DO UPDATE SET plan_id=excluded.plan_id,billing_interval=excluded.billing_interval,status=excluded.status,current_period_end=excluded.current_period_end,cancel_at_period_end=excluded.cancel_at_period_end,updated_at=excluded.updated_at',
-    ).bind(subscription.id, owner.id, planId, intervalOf(item?.price), subscription.status, subscription.current_period_end ?? item?.current_period_end ?? null, subscription.cancel_at_period_end ? 1 : 0, now()).run();
+      'INSERT INTO subscriptions (id,customer_id,plan_id,billing_interval,collection_method,status,current_period_end,cancel_at_period_end,updated_at) VALUES (?,?,?,?,?,?,?,?,?) ' +
+        'ON CONFLICT(id) DO UPDATE SET plan_id=excluded.plan_id,billing_interval=excluded.billing_interval,collection_method=excluded.collection_method,status=excluded.status,current_period_end=excluded.current_period_end,cancel_at_period_end=excluded.cancel_at_period_end,updated_at=excluded.updated_at',
+    ).bind(subscription.id, owner.id, planId, intervalOf(item?.price), subscription.collection_method === 'send_invoice' ? 'send_invoice' : 'charge_automatically', subscription.status, subscription.current_period_end ?? item?.current_period_end ?? null, subscription.cancel_at_period_end ? 1 : 0, now()).run();
     // A scheduled downgrade is pending only while Stripe still holds the schedule and it hasn't taken effect yet.
     await env.DB.prepare('UPDATE subscriptions SET pending_plan_id=NULL,pending_interval=NULL,schedule_id=NULL WHERE id=? AND (? IS NULL OR (pending_plan_id=plan_id AND COALESCE(pending_interval,billing_interval)=billing_interval))').bind(subscription.id, subscription.schedule || null).run();
     return true;
   }
 
   const currentSubscription = (env, customerId) =>
-    env.DB.prepare(`SELECT id,plan_id AS planId,status,current_period_end AS currentPeriodEnd,cancel_at_period_end AS cancelAtPeriodEnd,pending_plan_id AS pendingPlanId,billing_interval AS interval,pending_interval AS pendingInterval FROM subscriptions WHERE customer_id=? AND status IN (${[...LIVE_STATUSES].map(() => '?').join(',')}) ORDER BY updated_at DESC LIMIT 1`)
+    env.DB.prepare(`SELECT id,plan_id AS planId,status,current_period_end AS currentPeriodEnd,cancel_at_period_end AS cancelAtPeriodEnd,pending_plan_id AS pendingPlanId,billing_interval AS interval,pending_interval AS pendingInterval,collection_method AS collectionMethod FROM subscriptions WHERE customer_id=? AND status IN (${[...LIVE_STATUSES].map(() => '?').join(',')}) ORDER BY updated_at DESC LIMIT 1`)
       .bind(customerId, ...LIVE_STATUSES)
       .first();
 
   /** GET /api/billing: the signed-in customer's plan and invoices (amount, tax, status, links), fresh from Stripe. */
   async function status(env, active) {
     if (!enabledFor(env, active.customer.email)) return json({ enabled: false });
-    const row = await env.DB.prepare('SELECT stripe_customer_id FROM customers WHERE id=?').bind(active.customer.id).first();
+    const row = await env.DB.prepare('SELECT stripe_customer_id,net30_requested_at FROM customers WHERE id=?').bind(active.customer.id).first();
     let invoices = [];
     if (row?.stripe_customer_id) {
       // Refresh from Stripe so the page is right even if a webhook was missed.
@@ -136,7 +141,8 @@ export function billing({ HTTPError, json, now, origin, catalog, audit, mail }) 
       }));
     }
     const subscription = await currentSubscription(env, active.customer.id);
-    return json({ enabled: true, subscription: subscription ? { ...subscription, cancelAtPeriodEnd: Boolean(subscription.cancelAtPeriodEnd), planName: plans.get(subscription.planId)?.name ?? subscription.planId, interval: subscription.interval === 'year' ? 'year' : 'month', pendingInterval: subscription.pendingPlanId ? subscription.pendingInterval || subscription.interval || 'month' : null, pendingPlanName: subscription.pendingPlanId ? plans.get(subscription.pendingPlanId)?.name ?? null : null } : null, invoices });
+    const net30 = subscription ? { eligible: net30Eligible(subscription), active: subscription.collectionMethod === 'send_invoice', requestedAt: row?.net30_requested_at ?? null } : null;
+    return json({ enabled: true, net30, subscription: subscription ? { ...subscription, cancelAtPeriodEnd: Boolean(subscription.cancelAtPeriodEnd), planName: plans.get(subscription.planId)?.name ?? subscription.planId, interval: subscription.interval === 'year' ? 'year' : 'month', pendingInterval: subscription.pendingPlanId ? subscription.pendingInterval || subscription.interval || 'month' : null, pendingPlanName: subscription.pendingPlanId ? plans.get(subscription.pendingPlanId)?.name ?? null : null } : null, invoices });
   }
 
   /**
@@ -166,8 +172,8 @@ export function billing({ HTTPError, json, now, origin, catalog, audit, mail }) 
       customer,
       client_reference_id: active.customer.id,
       line_items: [{ price: price.id, quantity: 1 }],
-      // Cards (Visa, Mastercard…) and ACH bank debit only (boss, 2026-11-08); no Cash App, Amazon Pay or Link.
-      payment_method_types: ['card', 'us_bank_account'],
+      // Cards, ACH and Google Pay through the "VFTech checkout" configuration; cards and ACH only if it's missing.
+      ...(await checkoutMethods(env)),
       success_url: `${base}/account.html?billing=${plan ? 'success' : 'paid'}`,
       cancel_url: `${base}/account.html?billing=cancelled`,
       billing_address_collection: 'required',
@@ -179,6 +185,19 @@ export function billing({ HTTPError, json, now, origin, catalog, audit, mail }) 
       allow_promotion_codes: 'false',
     });
     return json({ url: session.url });
+  }
+
+  /** Finds the "VFTech checkout" payment method configuration once per Worker instance and key. */
+  async function checkoutMethods(env) {
+    const key = live(env) ? 'live' : 'test';
+    if (!methodConfigs.has(key)) {
+      let id = null;
+      try { id = ((await stripe(env, 'GET', 'payment_method_configurations', { limit: 100 })).data || []).find((c) => c.name === CHECKOUT_METHODS && c.active)?.id || null; }
+      catch (error) { console.error('payment method configuration', error?.message); }
+      if (!id) return { payment_method_types: ['card', 'us_bank_account'] };
+      methodConfigs.set(key, id);
+    }
+    return { payment_method_configuration: methodConfigs.get(key) };
   }
 
   /** POST /api/billing/portal: Stripe's page to change card, see invoices or cancel (cancel takes effect at period end). */
@@ -289,6 +308,33 @@ export function billing({ HTTPError, json, now, origin, catalog, audit, mail }) 
     return json({ changed: event });
   }
 
+
+  // ---- Net-30 invoices (spec phase 4): on request for Priority and annual plans. The customer asks here; staff
+  // approve it and switch the subscription to "email invoice, due in 30 days" in Stripe (the admin view comes in 4d). ----
+  const net30Eligible = (sub) => Boolean(sub && ['active', 'trialing'].includes(sub.status) && (sub.planId === 'priority' || sub.interval === 'year'));
+  /** POST /api/billing/net30: asks for invoice billing, net 30. One staff email per 30 days. */
+  async function requestNet30(env, active) {
+    if (!enabledFor(env, active.customer.email)) throw new HTTPError(503, 'Online billing is not switched on yet.');
+    const sub = await currentSubscription(env, active.customer.id);
+    if (!net30Eligible(sub)) throw new HTTPError(409, 'Invoice billing with 30 days to pay is for Priority and annual plans.');
+    if (sub.collectionMethod === 'send_invoice') throw new HTTPError(409, 'Your plan is already billed by invoice.');
+    const row = await env.DB.prepare('SELECT name,business,phone,net30_requested_at AS at FROM customers WHERE id=?').bind(active.customer.id).first();
+    if (row?.at && now() - row.at < 30 * DAY) return json({ requestedAt: row.at });
+    const at = now(), staff = String(env.CONTACT_TO || '').split(',').map((s) => s.trim()).filter(Boolean);
+    await env.DB.prepare('UPDATE customers SET net30_requested_at=? WHERE id=?').bind(at, active.customer.id).run();
+    await audit?.recordEvent(env, active.customer.id, 'net30_requested', sub.planId, sub.planId, '', sub.interval, sub.interval);
+    if (staff.length) await sendSafely(env, {
+      to: staff,
+      reply_to: active.customer.email,
+      subject: `Net-30 invoice request: ${active.customer.email}`,
+      text: [
+        `${row?.name || 'A customer'} (${active.customer.email}) asks to pay ${plans.get(sub.planId)?.name ?? sub.planId} ${sub.interval === 'year' ? 'annual' : 'monthly'} by invoice, due 30 days after it's sent.`,
+        `Business: ${row?.business || '—'}`, `Phone: ${row?.phone || '—'}`, `Subscription: ${sub.id}`, '',
+        'To approve: in Stripe, open the subscription, Edit, Payment, choose "Email invoice to the customer to pay manually" with 30 days to pay. The account page shows it once Stripe tells us. To decline, reply to the customer.',
+      ].join('\n'),
+    }, `net30-${active.customer.id}-${at}`);
+    return json({ requestedAt: at });
+  }
 
   // ---- Emails (spec phase 3): a welcome per plan, and a confirmation for every plan change. Stripe sends receipts,
   // retry and expiring-card emails, so none of those are duplicated here. A failed email never undoes a change. ----
@@ -440,5 +486,5 @@ export function billing({ HTTPError, json, now, origin, catalog, audit, mail }) 
     return { sent };
   }
 
-  return { enabled, live, enabledFor, status, checkout, portal, webhook, changePlan, dunning, renewalReminders, refreshCard, stripe };
+  return { enabled, live, enabledFor, status, checkout, portal, webhook, changePlan, requestNet30, dunning, renewalReminders, refreshCard, stripe };
 }
