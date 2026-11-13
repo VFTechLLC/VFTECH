@@ -29,6 +29,32 @@
       else{link.textContent='Manage subscription';link.classList.add('vfs-secondary');}
     });
   }
+  // Payment rules (spec phase 2): one banner on every page while a payment is owed, a dispute or missing payment
+  // method locks the account, or the card on file expires soon. The account page shows the payment screen instead.
+  function shortDate(seconds){return new Date(seconds*1000).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric',timeZone:'UTC'});}
+  var LOCKED={payment_required:true,suspended:true};
+  function paymentNotice(p){
+    if(!p||p.tier==='free'&&!p.standing)return null;
+    if(p.standing==='past_due')return {text:'Your last payment didn’t go through. Update your payment method so your plan keeps running.',action:'Fix payment',portal:true};
+    if(p.standing==='payment_required'&&p.reason==='dispute')return {text:'A payment on your account is disputed, so your plan is paused until it’s resolved.',action:'Contact us',href:'contact.html'};
+    if(p.standing==='payment_required'&&p.reason==='no_payment_method')return {text:'Your plan needs a payment method. Add one to keep your plan running.',action:'Add payment method',portal:true};
+    if(p.standing==='payment_required')return {text:'Payment needed: work on your plan is paused until what’s owed is paid'+(p.suspendsOn?'. It’s suspended on '+shortDate(p.suspendsOn):'')+'.',action:'Pay now',href:'account.html'};
+    if(p.standing==='suspended')return {text:'Your plan is suspended. Pay what’s owed'+(p.closesOn?' by '+shortDate(p.closesOn):'')+' to restore it straight away.',action:'Pay now',href:'account.html'};
+    if(p.card&&p.tier!=='free'&&(p.card.expiring||p.card.expired))return {text:'Your card ending '+p.card.last4+(p.card.expired?' has expired':' expires '+p.card.expires)+'. Update it to avoid a failed payment.',action:'Update card',portal:true};
+    return null;
+  }
+  async function openPortal(csrf,button){if(button)button.disabled=true;try{location.href=(await call('billing/portal',{},csrf)).url;}catch(error){if(button){button.disabled=false;button.textContent=error.message;}}}
+  function paymentBanner(session){
+    var old=document.getElementById('vfs-pay-banner');if(old)old.remove();
+    var p=session&&session.plan,notice=paymentNotice(p),main=document.querySelector('main');
+    if(!notice||!main)return;
+    if(LOCKED[p.standing]&&document.getElementById('vf-account-home'))return; // the payment screen says it already
+    var bar=element('div','vfs-pay-banner'+(LOCKED[p.standing]?' vfs-pay-banner-urgent':''));bar.id='vfs-pay-banner';bar.setAttribute('role','status');
+    var inner=element('div','vfs-pay-banner-inner');inner.append(element('p','',notice.text));
+    var go;if(notice.portal){go=element('button','vfs-button',notice.action);go.type='button';go.addEventListener('click',function(){openPortal(session.csrfToken,go);});}
+    else{go=element('a','vfs-button',notice.action);go.href=notice.href;}
+    inner.append(go);bar.append(inner);main.prepend(bar);
+  }
   var header={session:null};
   function accountHeader(session){
     header.session=session;
@@ -62,10 +88,10 @@
     return true;
   }
   if(api&&settings.accountsEnabled){
-    call('session').then(function(s){var session=s&&s.authenticated?s:null;accountHeader(session);
+    call('session').then(function(s){var session=s&&s.authenticated?s:null;accountHeader(session);paymentBanner(session);
       if(session&&document.querySelector('[data-vf-plan-card]'))planCards(session);
     }).catch(function(){});
-    document.addEventListener('vf-session',function(event){accountHeader(event.detail);});
+    document.addEventListener('vf-session',function(event){accountHeader(event.detail);paymentBanner(event.detail);});
   }
   var loader;
   function loadCaptcha(){if(window.turnstile)return Promise.resolve();if(loader)return loader;loader=new Promise(function(resolve,reject){window.vfTechTurnstileReady=resolve;var script=element('script');script.src='https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&onload=vfTechTurnstileReady';script.async=true;script.onerror=function(){reject(Error('Verification could not load. Please try again.'));};document.head.append(script);});return loader;}
@@ -97,7 +123,7 @@
     if(providers.length){social=element('div','vfs-social');providers.forEach(function(p){var link=element('a','vfs-button vfs-secondary',p[1]);link.href=new URL('auth/'+p[0]+'/start',api).href;social.append(link);});social.append(element('p','vfs-small','Or get a one-time code by email:'));signin.before(social);}
     var signinError=new URLSearchParams(location.search).get('signin_error');if(signinError){accountStatus.textContent=signinError;history.replaceState(null,'',location.pathname);}
     function showLoggedOut(){document.dispatchEvent(new CustomEvent('vf-session',{detail:null}));home.hidden=true;signin.hidden=false;if(social)social.hidden=false;codeForm.hidden=true;document.getElementById('vf-account-title').textContent='Create an account or sign in';state.csrf='';state.challengeId='';codeForm.reset();}
-    async function showAccount(result){state.csrf=result.csrfToken;document.dispatchEvent(new CustomEvent('vf-session',{detail:{authenticated:true,customer:result.customer,plan:result.plan,csrfToken:result.csrfToken}}));signin.hidden=true;if(social)social.hidden=true;codeForm.hidden=true;home.hidden=false;document.getElementById('vf-account-title').textContent='Your customer account';state.customer=result.customer;state.plan=result.plan||{tier:'free',name:'Free',status:'none'};renderTier();loadProfile();loadFeatures();accountStatus.textContent='You are signed in.';var list=document.getElementById('vf-requests');list.textContent='Loading your requests…';try{var data=await call('account/requests');list.textContent='';if(!data.requests.length)list.append(element('p','vfs-small','No requests yet. Send a project request using this verified email address.'));data.requests.forEach(function(request){var item=element('article','vfs-request'),selectedPlan=plan(request.planId);item.append(element('strong','',request.business||'Project request'),element('p','',new Date(request.createdAt*1000).toLocaleDateString()+' · '+(request.status==='sent'?'Accepted for email delivery':request.status==='failed'?'Delivery failed':'Processing')),element('p','',request.message));if(selectedPlan)item.append(element('p','',selectedPlan.name+' · '+selectedPlan.price));list.append(item);});}catch(error){list.textContent=error.message;}}
+    async function showAccount(result){state.csrf=result.csrfToken;document.dispatchEvent(new CustomEvent('vf-session',{detail:{authenticated:true,customer:result.customer,plan:result.plan,csrfToken:result.csrfToken}}));signin.hidden=true;if(social)social.hidden=true;codeForm.hidden=true;home.hidden=false;document.getElementById('vf-account-title').textContent='Your customer account';state.customer=result.customer;state.plan=result.plan||{tier:'free',name:'Free',status:'none'};renderTier();renderPaywall();loadProfile();loadFeatures();accountStatus.textContent='You are signed in.';var list=document.getElementById('vf-requests');list.textContent='Loading your requests…';try{var data=await call('account/requests');list.textContent='';if(!data.requests.length)list.append(element('p','vfs-small','No requests yet. Send a project request using this verified email address.'));data.requests.forEach(function(request){var item=element('article','vfs-request'),selectedPlan=plan(request.planId);item.append(element('strong','',request.business||'Project request'),element('p','',new Date(request.createdAt*1000).toLocaleDateString()+' · '+(request.status==='sent'?'Accepted for email delivery':request.status==='failed'?'Delivery failed':'Processing')),element('p','',request.message));if(selectedPlan)item.append(element('p','',selectedPlan.name+' · '+selectedPlan.price));list.append(item);});}catch(error){list.textContent=error.message;}}
     signin.addEventListener('submit',async function(event){event.preventDefault();if(!signin.reportValidity())return;if(!accountCaptcha.get()){accountStatus.textContent='Complete verification to receive a code.';return;}signSubmit.disabled=true;var fd=new FormData(signin);state.email=String(fd.get('email')).trim().toLowerCase();accountStatus.textContent='Requesting your verification code…';try{var result=await call('auth/request-code',{name:fd.get('name'),email:state.email,website:accountHoney.value,turnstileToken:accountCaptcha.get()});state.challengeId=result.challengeId;signin.hidden=true;codeForm.hidden=false;accountStatus.textContent='A code was accepted for delivery to '+state.email+'. Check your email.';document.getElementById('vf-code').focus();}catch(error){accountStatus.textContent=error.message;}finally{accountCaptcha.reset();}});
     codeForm.addEventListener('submit',async function(event){event.preventDefault();if(!codeForm.reportValidity())return;var submit=codeForm.querySelector('button[type=submit]');submit.disabled=true;accountStatus.textContent='Verifying your code…';try{var result=await call('auth/verify-code',{email:state.email,challengeId:state.challengeId,code:document.getElementById('vf-code').value});codeForm.reset();await showAccount(result);}catch(error){accountStatus.textContent=error.message;}finally{submit.disabled=false;}});
     document.getElementById('vf-change-email').addEventListener('click',function(){showLoggedOut();accountCaptcha.reset();accountStatus.textContent='Enter your email and complete verification for a new code.';document.getElementById('vf-email').focus();});
@@ -146,10 +172,30 @@
     async function loadProfile(){try{var pr=(await call('account/profile')).profile;state.business=pr.business||'';document.getElementById('vf-p-name').value=pr.name||'';document.getElementById('vf-p-business').value=pr.business||'';document.getElementById('vf-p-phone').value=pr.phone||'';renderTier();}catch{}}
     var profileForm=document.getElementById('vf-profile-form');
     if(profileForm)profileForm.addEventListener('submit',async function(event){event.preventDefault();var save=profileForm.querySelector('button[type=submit]');save.disabled=true;var fd=new FormData(profileForm);try{var pr=(await call('account/profile',{name:fd.get('name'),business:fd.get('business'),phone:fd.get('phone')},state.csrf)).profile;state.customer.name=pr.name;state.business=pr.business;renderTier();document.getElementById('vf-profile-edit').open=false;accountStatus.textContent='Profile saved.';}catch(error){accountStatus.textContent=error.message;}finally{save.disabled=false;}});
+    function renderPaywall(){
+      var p=state.plan||{},locked=!!LOCKED[p.standing],old=document.getElementById('vf-paywall');if(old)old.remove();
+      home.classList.toggle('vfs-account-locked',locked);if(!locked)return;
+      var wall=element('section','vfs-paywall');wall.id='vf-paywall';wall.setAttribute('aria-labelledby','vf-paywall-title');
+      var title=p.standing==='suspended'?'Your plan is suspended':p.reason==='dispute'?'A payment is disputed':p.reason==='no_payment_method'?'Add a payment method':'Payment needed';
+      var h=element('h3','',title);h.id='vf-paywall-title';wall.append(h);
+      var text=p.reason==='dispute'?'A charge on your account is being disputed with your bank, so work on your plan is paused until it’s resolved. Contact us and we’ll sort it out together.'
+        :p.reason==='no_payment_method'?'Your '+(p.name||'')+' plan needs a payment method on file. Add a card or bank account to keep it running.'
+        :p.standing==='suspended'?'Your '+(p.name||'')+' plan is suspended because of an unpaid balance, so its features are off. Paying everything owed restores it straight away.'+(p.closesOn?' If it’s still unpaid on '+shortDate(p.closesOn)+', the plan closes.':'')
+        :'We couldn’t collect payment for your '+(p.name||'')+' plan, so work on it is paused until what’s owed is paid.'+(p.suspendsOn?' If it’s still unpaid on '+shortDate(p.suspendsOn)+', the plan is suspended.':'');
+      wall.append(element('p','',text));
+      var actions=element('div','vfs-paywall-actions');
+      if(p.reason!=='dispute'&&p.reason!=='no_payment_method'){var pay=element('a','vfs-button','Pay what’s owed');pay.hidden=true;actions.append(pay);
+        call('billing').then(function(d){var open=(d.invoices||[]).filter(function(i){return i.status==='open'&&i.url;});if(open.length){pay.href=open[0].url;pay.target='_blank';pay.rel='noopener';var owed=open.reduce(function(sum,i){return sum+(i.total||0);},0);pay.textContent='Pay what’s owed ($'+(owed/100).toLocaleString('en-US',{minimumFractionDigits:2})+')';pay.hidden=false;}}).catch(function(){});}
+      var method=element('button','vfs-button'+(p.reason==='no_payment_method'?'':' vfs-secondary'),p.reason==='no_payment_method'?'Add payment method':'Update payment method');method.type='button';method.addEventListener('click',function(){openPortal(state.csrf,method);});
+      if(p.reason!=='dispute')actions.append(method);
+      var talk=element('a','vfs-button vfs-secondary','Contact us');talk.href='contact.html';actions.append(talk);
+      wall.append(actions,element('p','vfs-small','Until then, only billing, contact and sign out are available.'));
+      document.getElementById('vf-tier-card').after(wall);
+    }
     async function loadFeatures(){
       var body=document.getElementById('vf-features-body');if(!body)return;body.textContent='Loading…';
       try{
-        var d=await call('account/features');body.textContent='';
+        var d=await call('account/features');body.textContent='';if(d.paused){body.append(element('p','vfs-small','Paused until your payment is settled.'));return;}
         var list=element('ul','vfs-feature-list');
         d.included.forEach(function(f){var li=element('li','vfs-feature'),text=element('div');text.append(element('strong','',f.label));if(f.detail)text.append(element('span','vfs-small',f.detail));li.append(text);
           if(f.href){var a=element('a','vfs-button vfs-secondary',f.id==='phone'?'Call':f.id==='email'?'Email':'Open');a.href=f.href;if(f.type==='portal'){a.target='_blank';a.rel='noopener';}li.append(a);}list.append(li);});

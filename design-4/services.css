@@ -90,3 +90,15 @@
 #site-nav .vfs-acct-menu a:hover,#site-nav .vfs-acct-menu button:hover,#site-nav .vfs-acct-menu a:focus-visible,#site-nav .vfs-acct-menu button:focus-visible{background:rgba(127,127,127,.14)}
 #site-nav .vfs-acct-menu a::before,#site-nav .vfs-acct-menu a::after{content:none}
 @media (max-width:1100px){#site-nav .vfs-acct-menu{position:static;box-shadow:none;margin-top:6px}}
+
+/* Payment rules (Accounts spec, phase 2): the banner on every page and the account page's payment screen. */
+.vfs-pay-banner{background:#FFF4E5;color:#4A2A00;border-bottom:1px solid #F0C27A}
+.vfs-pay-banner-urgent{background:#FDECEC;color:#5C1010;border-bottom-color:#E8A0A0}
+.vfs-pay-banner-inner{max-width:1200px;margin:0 auto;padding:12px 16px;display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.vfs-pay-banner-inner p{margin:0;font-size:15px;flex:1 1 320px}
+.vfs-pay-banner .vfs-button{flex:none}
+.vfs-paywall{margin:0 0 18px;padding:20px;border:1px solid #E8A0A0;border-left:4px solid #B42318;border-radius:12px;background:rgba(180,35,24,.05);display:grid;gap:10px}
+.vfs-paywall h3{margin:0}
+.vfs-paywall p{margin:0}
+.vfs-paywall-actions{display:flex;gap:10px;flex-wrap:wrap}
+.vfs-account-locked #vf-profile-edit,.vfs-account-locked #vf-features{display:none}

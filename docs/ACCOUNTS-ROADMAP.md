@@ -12,8 +12,8 @@ Last updated: 13 Nov 2026.
 | --- | --- | --- |
 | 0 | Terms of Service v1.0 page, versioned checkout checkbox, `terms_version` in Stripe metadata | **Live** on vftech.io (`55d849e`, deployed 13 Nov) |
 | 1 | Free tier, plan badges and themes, profile editing, features hub, Manage subscription (upgrade / downgrade / cancel / undo), per-plan Terms acceptance | **Live** (PR #9, deployed 13 Nov), minus pricing-card states (1b) |
-| 1b | Home/features pricing cards: "Your plan" / "Upgrade" states; header initials + plan chip + profile menu | **In review** (`feature/accounts-1b`) |
-| 2 | Payment rules and suspension; Can't sign in? page | Not started |
+| 1b | Home/features pricing cards: "Your plan" / "Upgrade" states; header initials + plan chip + profile menu | **Live** (PR #11, deployed 13 Nov) |
+| 2 | Payment rules and suspension; Can't sign in? page | **In review:** 2a payment rules (`feature/accounts-2a`); 2b Can't sign in? not started |
 | 3 | Close account, data export, plan history view, honest cancellation, welcome and renewal emails | Not started |
 | 4 | Annual pricing, invoices, Google Pay, optional two-factor, hours meter, admin view | Not started |
 | 5 | Go live: live Stripe keys | Not started |
@@ -27,7 +27,7 @@ Last updated: 13 Nov 2026.
 - [x] **Stripe dashboard → Customer portal:** (checked 13 Nov in test mode: already off) turn off "Customers can switch plans". Plan changes must go through `/api/billing/change-plan` (proration rules, schedules, Terms acceptance, `plan_events`).
 - [x] **Deploy** (13 Nov: Worker and site) the Worker (`wrangler deploy --config backend/wrangler.jsonc`) and the site (run "Deploy to live site (vftech.io)" by hand; see Repo issues).
 - [ ] **Client portal links:** for customers with a project portal, `UPDATE customers SET portal_url='https://…' WHERE email='…'` (admin view comes in phase 4).
-- [ ] **Phase 1b** (built 13 Nov, in review: the home page has no pricing cards, so the states are on the features page cards; Payment methods shows only on paid plans because Free customers have no Stripe portal to open), then phase 2 onward, as below. Tick the Status table as each lands.
+- [x] **Phase 1b** (live 13 Nov: the home page has no pricing cards, so the states are on the features page cards; Payment methods shows only on paid plans because Free customers have no Stripe portal to open), then phase 2 onward, as below. Tick the Status table as each lands.
 
 ## Repo issues to clear first
 
@@ -42,6 +42,8 @@ Last updated: 13 Nov 2026.
 - Reuse the tier colours from `site/services.css` (`.vfs-tier-*`): Essentials #131D25 with #2F6584 border and #86C0E0 accent; Standard #10263A→#163652 with #86C0E0; Priority #0B0B0D with a #7A0F14 glow and gold #E8B84A. Priority stays dark in both site themes. At most one motion (a slow shimmer on the Priority star), off under reduced motion.
 
 ## Phase 2: payment rules and suspension; Can't sign in?
+
+**2a status (13 Nov):** built in `feature/accounts-2a`: migration `0004_payment_rules.sql`, timeline in `backend/account.js` (`standingOf`, `cardOf`), webhooks and the daily job in `backend/billing.js` (`paymentEvent`, `refreshCard`, `dunning`), banner and payment screen in `site/services.js`, tests in `tests/payment-rules.test.mjs`. Still to do by hand: add `invoice.payment_failed`, `invoice.paid`, `charge.dispute.created`, `charge.dispute.closed`, `payment_method.attached`, `payment_method.detached`, `payment_method.updated` and `customer.updated` to the Stripe webhook; set Smart Retries (three weeks, then mark the subscription unpaid) and expiring-card emails in the Stripe dashboard, in test and again in live. Day 90 ends the plan and writes the balance off; deleting the account data comes with the closing steps in phase 3.
 
 - **Stripe settings:** Smart Retries over three weeks, then mark the subscription **unpaid** (not cancelled), so paying the open invoice restores everything. Turn on expiring-card emails.
 - **Timeline from the failed payment** (track `past_due_since` from the `invoice.payment_failed` webhook):

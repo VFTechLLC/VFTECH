@@ -20,7 +20,13 @@ export function fixture(){
       if(method==='POST'&&path==='billing_portal/sessions')return Response.json({url:'https://billing.stripe.test/p_'+params.get('customer')});
       if(method==='GET'&&path==='subscriptions')return Response.json({data:s.subscriptions.filter(x=>x.customer===params.get('customer'))});
       if(method==='GET'&&path.startsWith('subscriptions/')){const sub=s.subscriptions.find(x=>x.id===path.split('/')[1]);return sub?Response.json(sub):Response.json({error:{type:'invalid_request_error'}},{status:404});}
-      if(method==='GET'&&path==='invoices')return Response.json({data:s.invoices.filter(x=>x.customer===params.get('customer'))});
+      if(method==='GET'&&path==='invoices')return Response.json({data:s.invoices.filter(x=>(!params.get('customer')||x.customer===params.get('customer'))&&(!params.get('subscription')||x.subscription===params.get('subscription'))&&(!params.get('status')||x.status===params.get('status')))});
+      // Payment rules (phase 2): payment methods, customers, charges, cancelling and writing off.
+      if(method==='GET'&&/^customers\/cus_\w+\/payment_methods$/.test(path))return Response.json({data:(s.paymentMethods||[]).filter(m=>m.customer===path.split('/')[1])});
+      if(method==='GET'&&/^customers\/cus_\w+$/.test(path))return Response.json({id:path.split('/')[1],invoice_settings:{default_payment_method:s.defaultPaymentMethod||null}});
+      if(method==='GET'&&/^charges\/ch_\w+$/.test(path))return Response.json((s.charges||[]).find(c=>c.id===path.split('/')[1])||{});
+      if(method==='DELETE'&&/^subscriptions\/sub_\w+$/.test(path)){const sub=s.subscriptions.find(x=>x.id===path.split('/')[1]);if(sub)sub.status='canceled';return Response.json(sub||{});}
+      if(method==='POST'&&/^invoices\/in_\w+\/mark_uncollectible$/.test(path)){const invoice=s.invoices.find(x=>x.id===path.split('/')[1]);if(invoice)invoice.status='uncollectible';return Response.json(invoice||{});}
       // Plan changes (phase 1): subscription updates and schedules. s.declineNext makes the next update a card decline.
       const priceById=id=>Object.values(s.prices).find(p=>p.id===id);
       if(method==='POST'&&/^subscriptions\/sub_\w+$/.test(path)){const sub=s.subscriptions.find(x=>x.id===path.split('/')[1]);if(!sub)return Response.json({error:{type:'invalid_request_error'}},{status:404});if(s.declineNext&&params.get('items[0][price]')){s.declineNext=false;return Response.json({error:{type:'card_error',code:'card_declined'}},{status:402});}s.updates=(s.updates||[]).concat([{id:sub.id,...Object.fromEntries(params)}]);if(params.has('cancel_at_period_end'))sub.cancel_at_period_end=params.get('cancel_at_period_end')==='true';if(params.get('items[0][price]'))sub.items.data[0].price=priceById(params.get('items[0][price]'));return Response.json(sub);}
