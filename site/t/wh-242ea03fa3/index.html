@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<meta name="referrer" content="no-referrer">
+<title>Webhook tester</title>
+<style>
+:root{color-scheme:light;--bg:#f6f7f9;--card:#fff;--fg:#14171c;--muted:#5b6472;--line:#d8dde5;--accent:#0b5fff;--ok:#0a7a3a;--bad:#b42318;--warn:#8a5a00;--code:#eef1f5}
+@media (prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#0f1216;--card:#171b21;--fg:#e8ebf0;--muted:#9aa4b2;--line:#2a313b;--accent:#5b9bff;--ok:#4ade80;--bad:#f87171;--warn:#fbbf24;--code:#0b0e12}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:880px;margin:0 auto;padding:24px 16px 64px}
+h1{font-size:1.4rem;margin:0 0 4px}
+p.sub{color:var(--muted);margin:0 0 20px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px}
+label{display:block;font-weight:600;margin:0 0 4px}
+.hint{color:var(--muted);font-size:.85rem;font-weight:400}
+input,textarea{width:100%;font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--fg);background:var(--code);border:1px solid var(--line);border-radius:6px;padding:8px}
+textarea{min-height:340px;resize:vertical}
+.row{display:grid;grid-template-columns:1fr;gap:12px}
+@media (min-width:700px){.row{grid-template-columns:2fr 1fr}}
+.actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:12px}
+button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--fg);padding:8px 14px;border-radius:6px;cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+button:disabled{opacity:.6;cursor:wait}
+.check{display:flex;gap:6px;align-items:center;font-size:.9rem;color:var(--muted)}
+.check input{width:auto}
+.status{font-weight:700}
+.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+pre{background:var(--code);border:1px solid var(--line);border-radius:6px;padding:10px;overflow-x:auto;white-space:pre-wrap;word-break:break-word;font:12.5px/1.45 ui-monospace,Menlo,Consolas,monospace;margin:8px 0 0}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<main>
+  <h1>Webhook tester</h1>
+  <p class="sub">Internal VF Tech tool. Sends a JSON POST with an API-key header and shows exactly what comes back. Nothing you enter is sent anywhere except the webhook, and nothing is saved unless you tick “remember”.</p>
+
+  <section class="card">
+    <div class="row">
+      <div>
+        <label for="url">Webhook URL</label>
+        <input id="url" type="url" placeholder="https://hook.us2.make.com/…" autocomplete="off" spellcheck="false">
+      </div>
+      <div>
+        <label for="hname">Header name</label>
+        <input id="hname" value="x-make-apikey" autocomplete="off" spellcheck="false">
+      </div>
+    </div>
+    <div style="margin-top:12px">
+      <label for="key">API key <span class="hint">(paste from Bill’s email — watch l/I and 0/O)</span></label>
+      <input id="key" type="password" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="actions">
+      <label class="check"><input id="remember" type="checkbox"> Remember URL and key in this browser</label>
+      <label class="check"><input id="showkey" type="checkbox"> Show key</label>
+    </div>
+  </section>
+
+  <section class="card">
+    <label for="body">JSON body <span class="hint">— Alco lead layout, marked <code>is_test: true</code></span></label>
+    <textarea id="body" spellcheck="false"></textarea>
+    <div class="actions">
+      <button class="primary" id="send">Send test</button>
+      <button id="fresh">New test ID + timestamp</button>
+      <button id="reset">Reset sample</button>
+      <span id="jsonstate" class="hint"></span>
+    </div>
+  </section>
+
+  <section class="card" id="result" aria-live="polite">
+    <div><span class="hint">Result</span></div>
+    <div id="summary" class="status">Not sent yet.</div>
+    <div id="detail"></div>
+  </section>
+
+  <section class="card hidden" id="fallback">
+    <strong>Send from your own machine instead</strong>
+    <p class="hint" style="margin:4px 0 0">If the browser blocked the request (CORS), run one of these. They contain your key — don’t paste them anywhere shared.</p>
+    <div class="actions"><button id="copyps">Copy PowerShell</button><button id="copycurl">Copy curl</button><span id="copied" class="hint"></span></div>
+    <pre id="ps"></pre>
+  </section>
+</main>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const STORE = 'vf-webhook-tester';
+  const sample = () => {
+    const now = new Date();
+    const off = -now.getTimezoneOffset(), sign = off >= 0 ? '+' : '-', pad = n => String(Math.floor(Math.abs(n))).padStart(2,'0');
+    const iso = new Date(now.getTime() + off*60000).toISOString().slice(0,19) + sign + pad(off/60) + ':' + pad(off%60);
+    const id = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
+    return {
+      schema_version: "1.0",
+      lead_id: id,
+      submitted_at: iso,
+      is_test: true,
+      contact: { first_name: "Test", last_name: "VFTech", email: "kevinvf@vftech.io", phone: "+13015550100" },
+      address: { street: "123 Test St", unit: null, city: "Silver Spring", state: "MD", zip: "20904" },
+      trades: ["Roof Replacement", "Gutters"],
+      project_description: "TEST LEAD from VF Tech webhook tester - please ignore.",
+      appointment_requested: false,
+      missing_fields: [],
+      source: { site: "alcoproductsinc.com", form_id: "contact", page_url: "https://alcoproductsinc.com/contact-us", landing_page: "https://alcoproductsinc.com/", referrer: null },
+      attribution: { utm_source: "test", utm_medium: "test", utm_campaign: "webhook-test", utm_term: null, utm_content: null, gclid: null, fbclid: null, msclkid: null },
+      consent: { tcpa_agreed: true, tcpa_text_version: "2026-10-22", consented_at: iso, ip_address: "203.0.113.1", user_agent: "VFTech webhook tester", consent_hash: "sha256:test" }
+    };
+  };
+  const setBody = o => { $('body').value = JSON.stringify(o, null, 2); validate(); };
+  const validate = () => {
+    try { JSON.parse($('body').value); $('jsonstate').textContent = 'Valid JSON'; $('jsonstate').className = 'hint ok'; return true; }
+    catch (e) { $('jsonstate').textContent = 'Invalid JSON: ' + e.message; $('jsonstate').className = 'hint bad'; return false; }
+  };
+  const esc = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+  try { const s = JSON.parse(localStorage.getItem(STORE) || 'null'); if (s) { $('url').value = s.url || ''; $('key').value = s.key || ''; $('hname').value = s.hname || 'x-make-apikey'; $('remember').checked = true; } } catch {}
+  const persist = () => { try { if ($('remember').checked) localStorage.setItem(STORE, JSON.stringify({ url: $('url').value.trim(), key: $('key').value.trim(), hname: $('hname').value.trim() })); else localStorage.removeItem(STORE); } catch {} };
+  ['url','key','hname','remember'].forEach(id => $(id).addEventListener('change', persist));
+  $('showkey').addEventListener('change', e => { $('key').type = e.target.checked ? 'text' : 'password'; });
+  $('body').addEventListener('input', validate);
+  $('reset').addEventListener('click', () => setBody(sample()));
+  $('fresh').addEventListener('click', () => {
+    if (!validate()) return;
+    const o = JSON.parse($('body').value), s = sample();
+    o.lead_id = s.lead_id; o.submitted_at = s.submitted_at; if (o.consent) o.consent.consented_at = s.submitted_at;
+    setBody(o);
+  });
+
+  const commands = (url, hname, key, body) => {
+    const compact = JSON.stringify(JSON.parse(body));
+    const ps = "$body = @'\n" + compact + "\n'@\nInvoke-WebRequest -Method Post -Uri \"" + url + "\" -Headers @{ \"" + hname + "\" = \"" + key + "\" } -ContentType \"application/json\" -Body $body | Select-Object StatusCode, Content";
+    const curl = "curl -i -X POST '" + url + "' -H '" + hname + ": " + key + "' -H 'Content-Type: application/json' --data '" + compact.replace(/'/g, "'\\''") + "'";
+    return { ps, curl };
+  };
+  let cmds = null;
+  const copy = async (txt) => { try { await navigator.clipboard.writeText(txt); $('copied').textContent = 'Copied'; setTimeout(() => $('copied').textContent = '', 1500); } catch { $('copied').textContent = 'Copy failed — select the text below'; } };
+  $('copyps').addEventListener('click', () => cmds && copy(cmds.ps));
+  $('copycurl').addEventListener('click', () => cmds && copy(cmds.curl));
+
+  $('send').addEventListener('click', async () => {
+    const url = $('url').value.trim(), key = $('key').value.trim(), hname = $('hname').value.trim();
+    if (!/^https:\/\//.test(url)) { $('summary').innerHTML = '<span class="bad">Enter the https webhook URL.</span>'; return; }
+    if (!key) { $('summary').innerHTML = '<span class="bad">Enter the API key.</span>'; return; }
+    if (!validate()) { $('summary').innerHTML = '<span class="bad">Fix the JSON first.</span>'; return; }
+    persist();
+    cmds = commands(url, hname, key, $('body').value);
+    $('ps').textContent = cmds.ps;
+    $('send').disabled = true; $('summary').textContent = 'Sending…'; $('detail').innerHTML = '';
+    const t0 = performance.now();
+    try {
+      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', [hname]: key }, body: $('body').value, mode: 'cors', cache: 'no-store', referrerPolicy: 'no-referrer' });
+      const ms = Math.round(performance.now() - t0);
+      const text = await res.text();
+      const headers = [...res.headers.entries()].map(([k,v]) => k + ': ' + v).join('\n');
+      let verdict, cls;
+      if (res.ok) { verdict = 'HTTP ' + res.status + ' — accepted. Watch for Bill’s echo email.'; cls = 'ok'; }
+      else if (res.status === 401 || res.status === 403) { verdict = 'HTTP ' + res.status + ' — key rejected. Recheck l/I and 0/O.'; cls = 'bad'; }
+      else if (res.status === 404 || res.status === 410) { verdict = 'HTTP ' + res.status + ' — webhook not found or scenario off.'; cls = 'bad'; }
+      else { verdict = 'HTTP ' + res.status + ' ' + res.statusText; cls = 'warn'; }
+      $('summary').innerHTML = '<span class="' + cls + '">' + esc(verdict) + '</span> <span class="hint">(' + ms + ' ms)</span>';
+      $('detail').innerHTML = '<pre>' + esc('Body:\n' + (text || '(empty)') + (headers ? '\n\nReadable headers:\n' + headers : '')) + '</pre>';
+      $('fallback').classList.add('hidden');
+    } catch (e) {
+      const ms = Math.round(performance.now() - t0);
+      $('summary').innerHTML = '<span class="warn">The browser blocked or couldn’t complete the request.</span> <span class="hint">(' + ms + ' ms)</span>';
+      $('detail').innerHTML = '<pre>' + esc(String(e) + '\n\nUsually CORS: the webhook didn’t allow a browser request with a custom header. The request may not have reached Make at all. Use the command below to test from your machine.') + '</pre>';
+      $('fallback').classList.remove('hidden');
+    } finally { $('send').disabled = false; }
+  });
+
+  setBody(sample());
+})();
+</script>
+</body>
+</html>
