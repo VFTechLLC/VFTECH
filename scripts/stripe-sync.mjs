@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// Makes Stripe match backend/catalog.json (the one price file, boss 2026-10-31): one product per monthly plan and
-// one active monthly USD price with the lookup key vftech_<plan id>_monthly (what the Worker charges); builds
+// Makes Stripe match backend/catalog.json (the one price file, boss 2026-10-31): one product per plan with an active
+// monthly USD price (lookup key vftech_<plan id>_monthly) and an annual one at ten times that (vftech_<plan id>_yearly,
+// spec phase 4: two months free); builds
 // with a fixed published price ("$3,500 Fixed") get a one-time price with the lookup key vftech_<id>_once. A changed
 // price gets a new Stripe price and takes over the lookup key; existing subscribers keep theirs until changed.
 // Also sets the Customer Portal: invoices, card updates, and cancel at period end (no refunds).
@@ -9,7 +10,7 @@
 //   node scripts/stripe-sync.mjs --apply    make the changes
 // The key comes from STRIPE_SECRET_KEY or backend/.dev.vars. Only sk_test_ keys unless --live is given too.
 import {readFileSync, existsSync} from 'node:fs';
-import {formEncode, lookupKey, oneTimeKey, fixedPriceCents} from '../backend/billing.js';
+import {formEncode, lookupKey, oneTimeKey, fixedPriceCents, ANNUAL_MONTHS} from '../backend/billing.js';
 
 const apply = process.argv.includes('--apply'), live = process.argv.includes('--live');
 const catalog = JSON.parse(readFileSync(new URL('../backend/catalog.json', import.meta.url), 'utf8'));
@@ -34,27 +35,28 @@ const cents = (price) => {
 };
 const say = (text) => console.log(`${apply ? '' : '[dry run] '}${text}`);
 
-const items = [...catalog.plans.map((plan) => ({...plan, amount: cents(plan.price), lookup: lookupKey(plan.id), monthly: true})), ...catalog.builds.filter((build) => fixedPriceCents(build.price) !== null).map((build) => ({...build, amount: fixedPriceCents(build.price), lookup: oneTimeKey(build.id), monthly: false}))];
-console.log(`Stripe ${key.startsWith('sk_test_') ? 'TEST' : 'LIVE'} mode: ${items.filter((i) => i.monthly).length} monthly plans and ${items.filter((i) => !i.monthly).length} one-time items from backend/catalog.json`);
+const items = [...catalog.plans.flatMap((plan) => [{...plan, amount: cents(plan.price), lookup: lookupKey(plan.id), monthly: true, interval: 'month'}, {...plan, amount: cents(plan.price) * ANNUAL_MONTHS, lookup: lookupKey(plan.id, 'year'), monthly: true, interval: 'year'}]), ...catalog.builds.filter((build) => fixedPriceCents(build.price) !== null).map((build) => ({...build, amount: fixedPriceCents(build.price), lookup: oneTimeKey(build.id), monthly: false}))];
+console.log(`Stripe ${key.startsWith('sk_test_') ? 'TEST' : 'LIVE'} mode: ${items.filter((i) => i.monthly).length} plan prices (monthly and annual) and ${items.filter((i) => !i.monthly).length} one-time items from backend/catalog.json`);
 const products = (await stripe('GET', 'products', {limit: 100, active: 'true'})).data;
 for (const plan of items) {
-  const amount = plan.amount, lookup = plan.lookup, per = plan.monthly ? '/month' : ' one-time';
+  const amount = plan.amount, lookup = plan.lookup, per = plan.monthly ? `/${plan.interval}` : ' one-time';
   let product = products.find((item) => item.metadata?.vftech_plan_id === plan.id);
   if (!product) {
     say(`create product ${plan.name}`);
     if (apply) product = await stripe('POST', 'products', {name: `VF Tech ${plan.name}`, description: plan.description.slice(0, 500), metadata: {vftech_plan_id: plan.id}, tax_code: 'txcd_10000000'});
+    if (product) products.push(product);
   } else if (product.name !== `VF Tech ${plan.name}`) {
     say(`rename product ${product.name} → VF Tech ${plan.name}`);
     if (apply) await stripe('POST', `products/${product.id}`, {name: `VF Tech ${plan.name}`});
   }
   const current = (await stripe('GET', 'prices', {lookup_keys: [lookup], active: 'true', limit: 1})).data[0];
-  if (current && current.unit_amount === amount && (plan.monthly ? current.recurring?.interval === 'month' : !current.recurring)) {
+  if (current && current.unit_amount === amount && (plan.monthly ? current.recurring?.interval === plan.interval : !current.recurring)) {
     console.log(`ok      ${plan.name}: $${amount / 100}${per} (${current.id})`);
     continue;
   }
   say(`${current ? 'replace' : 'create '} ${plan.name}: $${amount / 100}${per}${current ? ` (was $${current.unit_amount / 100})` : ''}`);
   if (apply) {
-    await stripe('POST', 'prices', {product: product.id, currency: 'usd', unit_amount: amount, ...(plan.monthly ? {recurring: {interval: 'month'}} : {}), lookup_key: lookup, transfer_lookup_key: 'true', tax_behavior: 'exclusive', nickname: `${plan.name} ${plan.monthly ? 'monthly' : 'one-time'}`});
+    await stripe('POST', 'prices', {product: product.id, currency: 'usd', unit_amount: amount, ...(plan.monthly ? {recurring: {interval: plan.interval}} : {}), lookup_key: lookup, transfer_lookup_key: 'true', tax_behavior: 'exclusive', nickname: `${plan.name} ${plan.monthly ? (plan.interval === 'year' ? 'annual' : 'monthly') : 'one-time'}`});
     if (current) await stripe('POST', `prices/${current.id}`, {active: 'false'});
   }
 }
