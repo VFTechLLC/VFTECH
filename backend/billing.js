@@ -44,7 +44,7 @@ export async function verifyWebhook(payload, header, secret, nowSeconds) {
   try { return JSON.parse(payload); } catch { return null; }
 }
 
-export function billing({ HTTPError, json, now, origin, catalog }) {
+export function billing({ HTTPError, json, now, origin, catalog, audit }) {
   const plans = new Map(catalog.plans.map((plan) => [plan.id, plan]));
   const oneTime = new Map(catalog.builds.filter((build) => fixedPriceCents(build.price) !== null).map((build) => [build.id, build]));
   const enabled = (env) => Boolean(env.STRIPE_SECRET_KEY && env.DB && origin(env));
@@ -73,6 +73,7 @@ export function billing({ HTTPError, json, now, origin, catalog }) {
     const result = await response.json().catch(() => ({}));
     if (!response.ok) {
       console.error('Stripe', method, path, response.status, result?.error?.type, result?.error?.code);
+      if (result?.error?.type === 'card_error') throw new HTTPError(402, 'Your payment method was declined, so nothing changed. Update it in Manage billing and try again.');
       throw new HTTPError(502, 'Billing is temporarily unavailable. Please try again.');
     }
     return result;
@@ -97,11 +98,13 @@ export function billing({ HTTPError, json, now, origin, catalog }) {
       'INSERT INTO subscriptions (id,customer_id,plan_id,status,current_period_end,cancel_at_period_end,updated_at) VALUES (?,?,?,?,?,?,?) ' +
         'ON CONFLICT(id) DO UPDATE SET plan_id=excluded.plan_id,status=excluded.status,current_period_end=excluded.current_period_end,cancel_at_period_end=excluded.cancel_at_period_end,updated_at=excluded.updated_at',
     ).bind(subscription.id, owner.id, planId, subscription.status, subscription.current_period_end ?? item?.current_period_end ?? null, subscription.cancel_at_period_end ? 1 : 0, now()).run();
+    // A scheduled downgrade is pending only while Stripe still holds the schedule and it hasn't taken effect yet.
+    await env.DB.prepare('UPDATE subscriptions SET pending_plan_id=NULL,schedule_id=NULL WHERE id=? AND (? IS NULL OR pending_plan_id=plan_id)').bind(subscription.id, subscription.schedule || null).run();
     return true;
   }
 
   const currentSubscription = (env, customerId) =>
-    env.DB.prepare(`SELECT id,plan_id AS planId,status,current_period_end AS currentPeriodEnd,cancel_at_period_end AS cancelAtPeriodEnd FROM subscriptions WHERE customer_id=? AND status IN (${[...LIVE_STATUSES].map(() => '?').join(',')}) ORDER BY updated_at DESC LIMIT 1`)
+    env.DB.prepare(`SELECT id,plan_id AS planId,status,current_period_end AS currentPeriodEnd,cancel_at_period_end AS cancelAtPeriodEnd,pending_plan_id AS pendingPlanId FROM subscriptions WHERE customer_id=? AND status IN (${[...LIVE_STATUSES].map(() => '?').join(',')}) ORDER BY updated_at DESC LIMIT 1`)
       .bind(customerId, ...LIVE_STATUSES)
       .first();
 
@@ -128,7 +131,7 @@ export function billing({ HTTPError, json, now, origin, catalog }) {
       }));
     }
     const subscription = await currentSubscription(env, active.customer.id);
-    return json({ enabled: true, subscription: subscription ? { ...subscription, cancelAtPeriodEnd: Boolean(subscription.cancelAtPeriodEnd), planName: plans.get(subscription.planId)?.name ?? subscription.planId } : null, invoices });
+    return json({ enabled: true, subscription: subscription ? { ...subscription, cancelAtPeriodEnd: Boolean(subscription.cancelAtPeriodEnd), planName: plans.get(subscription.planId)?.name ?? subscription.planId, pendingPlanName: subscription.pendingPlanId ? plans.get(subscription.pendingPlanId)?.name ?? null : null } : null, invoices });
   }
 
   /** POST /api/billing/checkout {planId, acceptTerms}: a Stripe Checkout page for one monthly plan. */
@@ -137,7 +140,7 @@ export function billing({ HTTPError, json, now, origin, catalog }) {
    * a fixed-price build (e.g. "$3,500 Fixed") is a one-time payment with an invoice, so it shows in billing history.
    * Ranged or quoted work can't be bought here: VF Tech sends a Stripe invoice once the price is agreed.
    */
-  async function checkout(env, active, input) {
+  async function checkout(env, active, input, ipHash) {
     if (!enabledFor(env, active.customer.email)) throw new HTTPError(503, 'Online payment is not switched on yet. Contact us to start a plan.');
     const id = typeof input.itemId === 'string' ? input.itemId : typeof input.planId === 'string' ? input.planId : '';
     const plan = plans.get(id), item = oneTime.get(id);
@@ -151,6 +154,7 @@ export function billing({ HTTPError, json, now, origin, catalog }) {
     const customer = await stripeCustomer(env, active.customer);
     const base = origin(env);
     const metadata = { vftech_customer_id: active.customer.id, item_id: chosen.id, terms_accepted_at: String(now()), terms_version: String(catalog.termsVersion || '1.0') };
+    await audit?.recordTerms(env, active.customer.id, chosen.id, ipHash);
     const session = await stripe(env, 'POST', 'checkout/sessions', {
       mode: plan ? 'subscription' : 'payment',
       customer,
@@ -195,5 +199,78 @@ export function billing({ HTTPError, json, now, origin, catalog }) {
     return json({ received: true });
   }
 
-  return { enabled, live, enabledFor, status, checkout, portal, webhook };
+
+  /**
+   * POST /api/billing/change-plan {planId, acceptTerms} — the Manage subscription page (spec: Billing rules).
+   *  - higher plan: immediately, prorated difference charged now (declined card = nothing changes)
+   *  - lower plan: at the end of the period, through a Stripe subscription schedule; choosing the current plan undoes it
+   *  - 'free': the plan stops at the end of the period; choosing the current plan again resumes it
+   * Moving to a paid plan needs the Terms accepted for that plan. Every change is recorded in plan_events.
+   */
+  async function changePlan(env, active, input, ipHash) {
+    if (!enabledFor(env, active.customer.email)) throw new HTTPError(503, 'Online billing is not switched on yet.');
+    const target = typeof input.planId === 'string' ? input.planId : '';
+    if (target !== 'free' && !plans.has(target)) throw new HTTPError(400, 'Choose one of the published plans.');
+    const current = await currentSubscription(env, active.customer.id);
+    if (!current) throw new HTTPError(409, target === 'free' ? 'You are already on Free.' : 'You don’t have a plan yet. Choose one to subscribe.');
+    if (!['active', 'trialing'].includes(current.status)) throw new HTTPError(409, 'Settle your last payment in Manage billing before changing plans.');
+    const rank = (id) => (id === 'free' ? 0 : catalog.plans.findIndex((plan) => plan.id === id) + 1);
+    const sub = await stripe(env, 'GET', `subscriptions/${current.id}`);
+    const item = sub.items?.data?.[0];
+    if (!item) throw new HTTPError(502, 'Billing is temporarily unavailable. Please try again.');
+    const release = async () => { if (sub.schedule) await stripe(env, 'POST', `subscription_schedules/${sub.schedule}/release`, {}); };
+    const priceFor = async (planId) => {
+      const price = (await stripe(env, 'GET', 'prices', { lookup_keys: [lookupKey(planId)], active: 'true', limit: 1 })).data?.[0];
+      if (!price) throw new HTTPError(503, `${plans.get(planId).name} isn’t available for online payment yet. Contact us to switch.`);
+      return price;
+    };
+    const needTerms = () => { if (input.acceptTerms !== true) throw new HTTPError(400, 'Please accept the Terms of Service for the new plan to continue.'); };
+    let event;
+    if (target === current.planId) {
+      if (sub.cancel_at_period_end) { await stripe(env, 'POST', `subscriptions/${sub.id}`, { cancel_at_period_end: 'false' }); event = 'resumed'; }
+      else if (sub.schedule) { await release(); event = 'change_undone'; }
+      else throw new HTTPError(409, `You’re already on ${plans.get(target).name}.`);
+    } else if (target === 'free') {
+      await release();
+      await stripe(env, 'POST', `subscriptions/${sub.id}`, { cancel_at_period_end: 'true' });
+      event = 'cancel_scheduled';
+    } else if (rank(target) > rank(current.planId)) {
+      needTerms();
+      const price = await priceFor(target);
+      await release();
+      await stripe(env, 'POST', `subscriptions/${sub.id}`, {
+        items: [{ id: item.id, price: price.id }],
+        proration_behavior: 'always_invoice',
+        payment_behavior: 'error_if_incomplete',
+        cancel_at_period_end: 'false',
+        metadata: { plan_id: target, terms_version: String(catalog.termsVersion || '1.0'), terms_accepted_at: String(now()) },
+      }, `upgrade-${sub.id}-${target}-${now()}`);
+      event = 'upgraded';
+    } else {
+      needTerms();
+      const price = await priceFor(target);
+      if (sub.cancel_at_period_end) await stripe(env, 'POST', `subscriptions/${sub.id}`, { cancel_at_period_end: 'false' });
+      const schedule = sub.schedule ? await stripe(env, 'GET', `subscription_schedules/${sub.schedule}`) : await stripe(env, 'POST', 'subscription_schedules', { from_subscription: sub.id });
+      const phase = schedule.phases?.[0];
+      if (!phase) throw new HTTPError(502, 'Billing is temporarily unavailable. Please try again.');
+      await stripe(env, 'POST', `subscription_schedules/${schedule.id}`, {
+        end_behavior: 'release',
+        proration_behavior: 'none',
+        phases: [
+          { items: [{ price: item.price.id, quantity: 1 }], start_date: phase.start_date, end_date: phase.end_date },
+          { items: [{ price: price.id, quantity: 1 }], iterations: 1, metadata: { plan_id: target, terms_version: String(catalog.termsVersion || '1.0') } },
+        ],
+      });
+      await env.DB.prepare('UPDATE subscriptions SET pending_plan_id=?,schedule_id=? WHERE id=?').bind(target, schedule.id, sub.id).run();
+      event = 'downgrade_scheduled';
+    }
+    if (target !== 'free' && target !== current.planId) await audit?.recordTerms(env, active.customer.id, target, ipHash);
+    await audit?.recordEvent(env, active.customer.id, event, current.planId, target);
+    const fresh = await stripe(env, 'GET', `subscriptions/${sub.id}`);
+    await saveSubscription(env, fresh);
+    if (event === 'downgrade_scheduled') await env.DB.prepare('UPDATE subscriptions SET pending_plan_id=?,schedule_id=? WHERE id=?').bind(target, fresh.schedule || null, sub.id).run();
+    return json({ changed: event });
+  }
+
+  return { enabled, live, enabledFor, status, checkout, portal, webhook, changePlan };
 }

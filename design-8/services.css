@@ -23,3 +23,40 @@
 
 /* Terms of Service: legal document layout */
 .vfs-legal{max-width:820px}.vfs-legal-head{padding:56px 0 28px;display:grid;gap:14px;border-bottom:1px solid var(--rule-strong,#c8cfdb)}.vfs-legal .vfs-legal-head h1{max-width:none}.vfs-legal-meta{font:500 13px/1.5 var(--f-note,system-ui);letter-spacing:.02em}.vfs-legal-toc{padding:24px 0;border-bottom:1px solid var(--rule-strong,#c8cfdb)}.vfs-legal-toc h2{font-size:15px!important;letter-spacing:.04em!important;text-transform:uppercase;margin-bottom:10px!important}.vfs-legal-toc ol{columns:2;column-gap:32px;margin:0;padding-left:22px;font-size:14px;line-height:1.9}.vfs-legal section{padding:26px 0 8px;scroll-margin-top:96px}.vfs-legal section h2{font-size:21px;letter-spacing:-.01em;margin-bottom:12px}.vfs-legal section h3{font-size:17px;margin:22px 0 10px}.vfs-legal section p{margin:0 0 12px;font-size:15.5px}.vfs-cl{display:inline-block;min-width:2.6em;font-weight:600}.vfs-legal-table{border-collapse:collapse;width:100%;font-size:14.5px;margin:6px 0 14px}.vfs-legal-table th,.vfs-legal-table td{border:1px solid var(--rule-strong,#c8cfdb);padding:9px 11px;vertical-align:top;text-align:left;white-space:normal}.vfs-legal-table th{font-weight:600}.vfs-legal-list{padding-left:22px;font-size:15.5px;margin:0 0 12px}.vfs-legal-list li{margin:4px 0}@media (max-width:640px){.vfs-legal-toc ol{columns:1}}
+
+/* Account: plan header, badges and tier themes (Accounts & Subscriptions spec, "Visual identity by tier").
+   Paid tiers are dark cards in both site themes; Free uses the page's own surface. Meaning never rests on colour:
+   the badge always spells the plan name. */
+.vfs-tier{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;align-items:center;padding:20px;border-radius:14px;border:1px solid var(--rule-strong,#c8cfdb);margin:0 0 18px}
+.vfs-tier>div{display:grid;gap:4px;justify-items:start}
+.vfs-tier-name{font-weight:600;font-size:19px;margin:0}
+.vfs-tier .vfs-small{margin:0}
+.vfs-tier-line{grid-column:1/-1;border-top:1px solid var(--rule-strong,#c8cfdb);padding-top:10px}
+.vfs-avatar{width:56px;height:56px;border-radius:50%;display:grid;place-items:center;font-weight:600;font-size:19px;background:var(--rule-strong,#283237)}
+.vfs-badge{display:inline-block;padding:3px 11px;border-radius:999px;font-size:12.5px;font-weight:600;letter-spacing:.02em;border:1px solid currentColor}
+.vfs-tier-essentials{background:#131D25;border-color:#2F6584;color:#E4E9EA}
+.vfs-tier-essentials .vfs-avatar{background:#1D3447;color:#86C0E0;box-shadow:inset 0 0 0 1.5px #86C0E0}
+.vfs-tier-essentials .vfs-badge{color:#86C0E0}
+.vfs-tier-standard{background:linear-gradient(160deg,#163652,#10263A);border-color:#2F6584;color:#E4E9EA}
+.vfs-tier-standard .vfs-avatar{background:#86C0E0;color:#0E1215}
+.vfs-tier-standard .vfs-badge{background:#86C0E0;color:#0E1215;border-color:#86C0E0}
+.vfs-tier-priority{background:radial-gradient(120% 140% at 100% 0,rgba(122,15,20,.75),rgba(122,15,20,0) 60%),#0B0B0D;border-color:#8A6A2A;color:#F5E6C4}
+.vfs-tier-priority .vfs-avatar{background:#E8B84A;color:#0B0B0D;box-shadow:0 0 0 3px #0B0B0D,0 0 0 4.5px #E8B84A}
+.vfs-tier-priority .vfs-badge{background:#E8B84A;color:#0B0B0D;border-color:#E8B84A;letter-spacing:.06em;text-transform:uppercase}
+.vfs-tier-priority .vfs-tier-name{color:#E8B84A}
+.vfs-tier-essentials .vfs-tier-line,.vfs-tier-standard .vfs-tier-line{border-color:#2F6584}
+.vfs-tier-priority .vfs-tier-line{border-color:#5A4320}
+.vfs-tier-essentials .vfs-small,.vfs-tier-standard .vfs-small{color:#A9C9DD}
+.vfs-tier-priority .vfs-small{color:#C9A766}
+.vfs-details{margin:0 0 18px}.vfs-details summary{cursor:pointer;font-weight:600}
+.vfs-features{margin:0 0 22px}
+.vfs-feature-list{list-style:none;margin:0 0 14px;padding:0;display:grid;gap:8px}
+.vfs-feature{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid var(--rule-strong,#c8cfdb);border-radius:10px}
+.vfs-feature>div{display:grid;gap:2px}.vfs-feature .vfs-button{flex:none}
+.vfs-locked .vfs-feature{opacity:.72;border-style:dashed}
+.vfs-plan-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:14px 0}
+.vfs-plan-card{display:grid;gap:6px;align-content:start;padding:14px;border-radius:12px;border:1px solid var(--rule-strong,#c8cfdb)}
+.vfs-plan-card.vfs-tier-essentials .vfs-small,.vfs-plan-card.vfs-tier-standard .vfs-small{color:#A9C9DD}
+.vfs-plan-card.vfs-tier-priority strong{color:#E8B84A}
+.vfs-plan-card .vfs-button{margin-top:6px}
+@media (max-width:640px){.vfs-feature{flex-direction:column;align-items:flex-start}}
