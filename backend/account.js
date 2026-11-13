@@ -101,12 +101,17 @@ export function accounts({ HTTPError, json, now, catalog, field }) {
   }
 
   /** Plan history and Terms acceptances: the audit trail the spec asks for. */
-  async function recordEvent(env, customerId, type, fromPlan, toPlan) {
-    await env.DB.prepare('INSERT INTO plan_events (id,customer_id,type,from_plan,to_plan,created_at) VALUES (?,?,?,?,?,?)').bind(crypto.randomUUID(), customerId, type, fromPlan || '', toPlan || '', now()).run();
+  async function recordEvent(env, customerId, type, fromPlan, toPlan, reason = '') {
+    await env.DB.prepare('INSERT INTO plan_events (id,customer_id,type,from_plan,to_plan,reason,created_at) VALUES (?,?,?,?,?,?,?)').bind(crypto.randomUUID(), customerId, type, fromPlan || '', toPlan || '', reason || '', now()).run();
+  }
+  /** GET /api/account/history: the customer's plan history, newest first (spec phase 3). */
+  async function history(env, active) {
+    const events = (await env.DB.prepare('SELECT type,from_plan AS fromPlan,to_plan AS toPlan,reason,created_at AS at FROM plan_events WHERE customer_id=? ORDER BY created_at DESC,rowid DESC LIMIT 100').bind(active.customer.id).all()).results || [];
+    return json({ events: events.map((e) => ({ ...e, fromName: e.fromPlan ? name(e.fromPlan) : '', toName: e.toPlan ? name(e.toPlan) : '' })) });
   }
   async function recordTerms(env, customerId, itemId, ipHash) {
     await env.DB.prepare('INSERT INTO terms_acceptances (id,customer_id,item_id,version,ip_hash,accepted_at) VALUES (?,?,?,?,?,?)').bind(crypto.randomUUID(), customerId, itemId, String(catalog.termsVersion || '1.0'), ipHash || '', now()).run();
   }
 
-  return { planFor, getProfile, saveProfile, features, recordEvent, recordTerms };
+  return { planFor, getProfile, saveProfile, features, recordEvent, recordTerms, history };
 }

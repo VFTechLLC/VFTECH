@@ -76,7 +76,7 @@ async function session(request,env){requireReady(env,'accountsEnabled');const to
 async function cleanup(env){if(!env.DB)return;const timestamp=now();await env.DB.batch([env.DB.prepare('DELETE FROM auth_challenges WHERE expires_at<=?').bind(timestamp),env.DB.prepare('DELETE FROM sessions WHERE expires_at<=?').bind(timestamp),env.DB.prepare('DELETE FROM rate_limits WHERE expires_at<=?').bind(timestamp),env.DB.prepare('DELETE FROM contact_requests WHERE created_at<?').bind(timestamp-30*24*3600)]);}
 // Subscriptions (backend/billing.js): signed-in customers only, CSRF-checked like logout.
 const acct=accounts({HTTPError,json,now,catalog,field});
-const bills=billing({HTTPError,json,now,origin,catalog,audit:acct});
+const bills=billing({HTTPError,json,now,origin,catalog,audit:acct,mail:send});
 // Closing an account and downloading its data (backend/closing.js).
 const shut=closing({HTTPError,json,now,hmac,code,equal,send,codeSeconds:CODE_SECONDS,stripe:bills.stripe,planFor:acct.planFor,recordEvent:acct.recordEvent});
 async function ipHash(request,env){return hmac(env,'ip:'+(request.headers.get('CF-Connecting-IP')||'unknown'));}
@@ -118,6 +118,7 @@ export default {
       if(request.method==='POST'&&url.pathname==='/api/stripe/webhook')return await bills.webhook(request,env);
       if(request.method==='GET'&&url.pathname==='/api/billing')return await bills.status(env,await signedIn(request,env,false));
       if(request.method==='GET'&&url.pathname==='/api/account/profile')return await acct.getProfile(env,await signedIn(request,env,false));
+      if(request.method==='GET'&&url.pathname==='/api/account/history')return await acct.history(env,await signedIn(request,env,false));
       if(request.method==='GET'&&url.pathname==='/api/account/export')return await shut.exportData(env,await signedIn(request,env,false));
       if(request.method==='GET'&&url.pathname==='/api/account/features')return await acct.features(env,await signedIn(request,env,false));
       if(request.method==='POST'){sameOrigin(request,env);const billingRoute=url.pathname==='/api/billing/checkout'?'checkout':url.pathname==='/api/billing/portal'?'portal':url.pathname==='/api/billing/change-plan'?'change':null;const input=await body(request);if(url.pathname==='/api/contact')return await contact(request,env,input);if(url.pathname==='/api/auth/request-code')return await requestCode(request,env,input);if(url.pathname==='/api/auth/verify-code')return await verifyCode(request,env,input);if(url.pathname==='/api/auth/recovery')return await recovery(request,env,input);

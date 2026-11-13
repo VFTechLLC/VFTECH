@@ -110,3 +110,8 @@
 .vfs-close-box{display:grid;gap:10px;padding:16px;border:1px solid var(--rule-strong,#c8cfdb);border-radius:12px}
 .vfs-close-box p{margin:0}
 .vfs-button.vfs-danger{background:#B42318;border-color:#B42318;color:#fff}
+
+/* Plan history (Accounts spec, phase 3). */
+.vfs-history{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:6px}
+.vfs-history li{display:flex;gap:10px;flex-wrap:wrap}
+.vfs-history .vfs-small{min-width:96px}

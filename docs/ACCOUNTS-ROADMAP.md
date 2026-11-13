@@ -14,7 +14,7 @@ Last updated: 13 Nov 2026.
 | 1 | Free tier, plan badges and themes, profile editing, features hub, Manage subscription (upgrade / downgrade / cancel / undo), per-plan Terms acceptance | **Live** (PR #9, deployed 13 Nov), minus pricing-card states (1b) |
 | 1b | Home/features pricing cards: "Your plan" / "Upgrade" states; header initials + plan chip + profile menu | **Live** (PR #11, deployed 13 Nov) |
 | 2 | Payment rules and suspension; Can't sign in? page | 2a payment rules **live** (PR #12, 13 Nov); 2b Can't sign in? **live** (PR #13, 13 Nov) |
-| 3 | Close account, data export, plan history view, honest cancellation, welcome and renewal emails | 3a close account + data export **in review** (`feature/accounts-3a`); 3b not started |
+| 3 | Close account, data export, plan history view, honest cancellation, welcome and renewal emails | 3a close account + data export **live** (PR #14, 13 Nov); 3b history, cancellation and emails **in review** (`feature/accounts-3b`) |
 | 4 | Annual pricing, invoices, Google Pay, optional two-factor, hours meter, admin view | Not started |
 | 5 | Go live: live Stripe keys | Not started |
 
@@ -64,7 +64,9 @@ Last updated: 13 Nov 2026.
 
 ## Phase 3: closing, export, history, emails
 
-**3a status (13 Nov): in review** (`feature/accounts-3a`): `backend/closing.js` (code to the account email, typed email, end of period / 14 days / now, Keep my account, daily deletion, JSON export), migration `0006_closing.sql`, the "Your data and account" box and the "closes on" banner in `site/services.js`, tests in `tests/closing.test.mjs`. Close now is offered on Free too (closes at once).
+**3b status (13 Nov): in review** (`feature/accounts-3b`): Plan history (`GET /api/account/history`, a "Plan history" panel on the account page; Checkout now records a `subscribed` event); cancelling offers Essentials at renewal first and asks one optional why from a short list, kept in `plan_events.reason` (migration `0007_plan_reasons.sql`); a welcome email per plan from `checkout.session.completed` (Priority's links to `contact.html?plan=priority` for the kickoff call until there is a booking link); a confirmation email for every plan change. The annual renewal reminder waits for annual plans (phase 4). Tests in `tests/history-emails.test.mjs`.
+
+**3a status (13 Nov): live** (PR #14): `backend/closing.js` (code to the account email, typed email, end of period / 14 days / now, Keep my account, daily deletion, JSON export), migration `0006_closing.sql`, the "Your data and account" box and the "closes on" banner in `site/services.js`, tests in `tests/closing.test.mjs`. Close now is offered on Free too (closes at once).
 
 - **Close account:** the customer confirms with their email plus a fresh code (entered within 10 minutes). A paid plan stops renewing and the account stays open until the paid period ends, with a banner reading "Your account closes on <date>" and **Keep my account**. **Close now** ends the plan and the account at once, with no refund. With no paid plan, a 14-day window applies. On the closing date, delete profile, sessions, challenges and requests from D1 and detach payment methods in Stripe; keep invoices in Stripe as tax records; send a confirmation email.
 - **Data export:** "Download my data" (profile, requests, invoice list) as one JSON file.

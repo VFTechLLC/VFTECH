@@ -224,6 +224,17 @@
           catch(error){note.textContent=error.message;later.disabled=now.disabled=false;}});
       });
     });
+    var historyBox=document.getElementById('vf-history');
+    if(historyBox)historyBox.addEventListener('toggle',async function(){
+      if(!historyBox.open)return;var body=document.getElementById('vf-history-body');body.textContent='Loading…';
+      try{var events=(await call('account/history')).events||[];body.textContent='';
+        if(!events.length){body.append(element('p','vfs-small','No plan changes yet.'));return;}
+        var list=element('ul','vfs-history');
+        events.forEach(function(e){var a=e.fromName,b=e.toName;var text={subscribed:'Started '+b,upgraded:'Upgraded from '+a+' to '+b,downgrade_scheduled:'Scheduled a switch from '+a+' to '+b,change_undone:'Kept '+a+' (scheduled switch cancelled)',cancel_scheduled:'Cancelled '+a+(e.reason?' ('+e.reason+')':''),resumed:'Kept '+a+' (cancellation undone)',closed_unpaid:a+' closed after 90 days unpaid',account_close_scheduled:'Asked to close the account',account_close_cancelled:'Kept the account'}[e.type]||e.type;
+          var li=element('li');li.append(element('span','vfs-small',shortDate(e.at)),document.createTextNode(' '+text));list.append(li);});
+        body.append(list);}
+      catch(error){body.textContent=error.message;}
+    });
     async function loadFeatures(){
       var body=document.getElementById('vf-features-body');if(!body)return;body.textContent='Loading…';
       try{
@@ -259,12 +270,20 @@
       var form=element('form','vfs-form vfs-subscribe'),name=tierName(id),until=sub.currentPeriodEnd?day(sub.currentPeriodEnd):'the end of your billing period',needTerms=kind==='up'||kind==='down';form.id='vf-change-form';
       form.append(element('p','',{up:'Upgrade to '+name+' now. Today you pay the prorated difference for the rest of this billing period; after that, '+((plan(id)||{}).price||'').replace('/mo',' a month')+' plus tax where it applies.',down:'Switch to '+name+' on '+until+'. You keep '+tierName(sub.planId)+' until then, and nothing is charged today.',free:'Cancel your plan. It stays active until '+until+', then your account continues as Free, with no service plan. No refund for the current period.',resume:'Keep '+name+'. It will renew as usual on '+until+'.',undo:'Keep '+name+' and cancel the scheduled change.'}[kind]));
       if(needTerms){var label=element('label','vfs-check'),box=element('input');box.type='checkbox';box.required=true;label.append(box,document.createTextNode(' I have read and agree to the '));var link=element('a','','Terms of Service');link.href='terms.html';link.target='_blank';label.append(link,document.createTextNode(' (version '+(catalog.termsVersion||'1.0')+'), including section 5 for '+name+'.'));form.append(label);}
+      var why=null;
+      if(kind==='free'){
+        var cheapest=catalog.plans[0];
+        if(cheapest&&cheapest.id!==sub.planId){var offer=element('p','vfs-small'),swap=element('button','vfs-link','Switch to '+cheapest.name+' at renewal instead ('+String(cheapest.price||'').replace('/mo',' a month')+')');swap.type='button';swap.addEventListener('click',function(){confirmChange(cheapest.id,'down',sub,anchor);});offer.append(document.createTextNode('Prefer to keep going for less? '),swap);form.append(offer);}
+        var whyLabel=element('label','','Why are you cancelling? (optional)');why=element('select');why.id='vf-cancel-why';whyLabel.htmlFor='vf-cancel-why';
+        ['','Too expensive','Not using it enough','The work is finished','Moving to another provider','Something else'].forEach(function(text){var option=element('option','',text||'Choose a reason');option.value=text;why.append(option);});
+        form.append(whyLabel,why);
+      }
       var go=element('button','vfs-button',{up:'Upgrade and pay the difference',down:'Schedule the switch',free:'Cancel plan',resume:'Keep my plan',undo:'Keep my plan'}[kind]);go.type='submit';
       var back=element('button','vfs-button vfs-secondary','Never mind');back.type='button';back.addEventListener('click',function(){form.remove();});
       var note=element('p','vfs-small vfs-form-note');note.setAttribute('role','alert');
       form.append(note,go,back);
       form.addEventListener('submit',async function(event){event.preventDefault();if(!form.reportValidity())return;go.disabled=true;note.textContent='';accountStatus.textContent='Updating your plan…';
-        try{await call('billing/change-plan',{planId:kind==='resume'||kind==='undo'?sub.planId:id,acceptTerms:needTerms},state.csrf);
+        try{await call('billing/change-plan',{planId:kind==='resume'||kind==='undo'?sub.planId:id,acceptTerms:needTerms,reason:why?why.value:undefined},state.csrf);
           accountStatus.textContent={up:'You’re on '+name+' now.',down:'Switch to '+name+' scheduled for '+until+'.',free:'Plan cancelled. It stays active until '+until+'.',resume:'Your plan will renew as usual.',undo:'Scheduled change cancelled.'}[kind];await refreshAccount();}
         catch(error){accountStatus.textContent=error.message;note.textContent=error.message;go.disabled=false;}});
       anchor.after(form);box?box.focus():go.focus();

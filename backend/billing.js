@@ -44,7 +44,7 @@ export async function verifyWebhook(payload, header, secret, nowSeconds) {
   try { return JSON.parse(payload); } catch { return null; }
 }
 
-export function billing({ HTTPError, json, now, origin, catalog, audit }) {
+export function billing({ HTTPError, json, now, origin, catalog, audit, mail }) {
   const plans = new Map(catalog.plans.map((plan) => [plan.id, plan]));
   const oneTime = new Map(catalog.builds.filter((build) => fixedPriceCents(build.price) !== null).map((build) => [build.id, build]));
   const enabled = (env) => Boolean(env.STRIPE_SECRET_KEY && env.DB && origin(env));
@@ -197,6 +197,7 @@ export function billing({ HTTPError, json, now, origin, catalog, audit }) {
     const subscriptionId = event.type.startsWith('customer.subscription.') ? event.data?.object?.id : event.type === 'checkout.session.completed' ? event.data?.object?.subscription : null;
     if (typeof subscriptionId === 'string' && /^sub_[A-Za-z0-9]+$/.test(subscriptionId)) await saveSubscription(env, await stripe(env, 'GET', `subscriptions/${subscriptionId}`));
     if (event.type === 'checkout.session.completed' || event.type === 'customer.subscription.created') await refreshCard(env, event.data?.object?.customer);
+    if (event.type === 'checkout.session.completed' && event.data?.object?.mode === 'subscription') await welcome(env, event.data.object);
     await paymentEvent(env, event);
     return json({ received: true });
   }
@@ -267,13 +268,56 @@ export function billing({ HTTPError, json, now, origin, catalog, audit }) {
       event = 'downgrade_scheduled';
     }
     if (target !== 'free' && target !== current.planId) await audit?.recordTerms(env, active.customer.id, target, ipHash);
-    await audit?.recordEvent(env, active.customer.id, event, current.planId, target);
+    // Cancelling asks one optional "why" (spec: honest cancellation); it is kept with the event.
+    const reason = event === 'cancel_scheduled' && typeof input.reason === 'string' ? input.reason.replace(/[\r\n<>]+/g, ' ').trim().slice(0, 300) : '';
+    await audit?.recordEvent(env, active.customer.id, event, current.planId, target, reason);
     const fresh = await stripe(env, 'GET', `subscriptions/${sub.id}`);
     await saveSubscription(env, fresh);
+    await confirmChange(env, active.customer, event, current.planId, target, fresh.current_period_end ?? fresh.items?.data?.[0]?.current_period_end);
     if (event === 'downgrade_scheduled') await env.DB.prepare('UPDATE subscriptions SET pending_plan_id=?,schedule_id=? WHERE id=?').bind(target, fresh.schedule || null, sub.id).run();
     return json({ changed: event });
   }
 
+
+  // ---- Emails (spec phase 3): a welcome per plan, and a confirmation for every plan change. Stripe sends receipts,
+  // retry and expiring-card emails, so none of those are duplicated here. A failed email never undoes a change. ----
+  const monthlyPrice = (id) => String(plans.get(id)?.price || '').replace('/mo', ' a month');
+  const featureDetail = (featureId, planId) => { const f = (catalog.features || []).find((x) => x.id === featureId); return typeof f?.detail === 'object' ? f.detail[planId] || '' : f?.detail || ''; };
+  const sendSafely = async (env, payload, key) => { if (!mail) return; try { await mail(env, payload, key); } catch (error) { console.error('email', key, error?.message); } };
+  const shortDay = (seconds) => (seconds ? new Date(seconds * 1000).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' }) : 'the end of this billing period');
+
+  async function welcome(env, session) {
+    const owner = session.customer && (await env.DB.prepare('SELECT id,email,name FROM customers WHERE stripe_customer_id=?').bind(session.customer).first());
+    const row = owner && session.subscription && (await env.DB.prepare('SELECT plan_id AS planId FROM subscriptions WHERE id=?').bind(session.subscription).first());
+    if (!owner || !row || !plans.has(row.planId)) return;
+    const id = row.planId, plan = plans.get(id), account = `${origin(env)}/account.html`;
+    await audit?.recordEvent(env, owner.id, 'subscribed', 'free', id);
+    const lines = [
+      `Hi ${owner.name || 'there'},`, '',
+      `Welcome to VFTech ${plan.name}. Thank you for choosing us.`, '',
+      'What your plan includes:',
+      `- Changes handled by us: ${featureDetail('hours', id) || 'as agreed'} each month`,
+      `- Response time: ${featureDetail('response', id) || 'as agreed'}`,
+      '- Hosting, domain and SSL, daily backups kept 30 days, uptime monitoring and security updates',
+    ];
+    if (id !== 'essentials') lines.push('- The AI update assistant and a monthly traffic and lead report');
+    if (id === 'priority') lines.push('- A quarterly technology and search review', '', `First step: book your kickoff call so we can plan the work together: ${origin(env)}/contact.html?plan=priority`);
+    lines.push('', `Send requests and see your plan any time from your account: ${account}`, 'Your receipt comes separately from our payment provider.', '', 'VF Tech', 'kevinvf@vftech.io');
+    await sendSafely(env, { to: [owner.email], subject: `Welcome to VFTech ${plan.name}`, text: lines.join('\n') }, `welcome-${session.id}`);
+  }
+
+  async function confirmChange(env, customer, event, fromId, toId, periodEnd) {
+    const from = plans.get(fromId)?.name ?? fromId, to = toId === 'free' ? 'Free' : plans.get(toId)?.name ?? toId, when = shortDay(periodEnd);
+    const message = {
+      upgraded: [`You're on ${to} now`, `Your plan changed from ${from} to ${to} today. The difference for the rest of this billing period was charged now, and your receipt comes separately. From ${when} it's ${monthlyPrice(toId)}, plus tax where it applies.`],
+      downgrade_scheduled: [`Your switch to ${to} is scheduled`, `You keep ${from} until ${when}, then your plan switches to ${to} at ${monthlyPrice(toId)}. Nothing is charged today. Changed your mind? Keep ${from} from your account page.`],
+      cancel_scheduled: [`Your ${from} plan is cancelled`, `Your plan stays active until ${when}, then your account continues as Free, with no service plan. There are no further charges. Changed your mind? Keep your plan from your account page.`],
+      resumed: [`Your ${from} plan will renew`, `Your cancellation is undone. Your plan renews as usual on ${when}.`],
+      change_undone: [`You're staying on ${from}`, `Your scheduled switch is cancelled. You stay on ${from}, and it renews as usual on ${when}.`],
+    }[event];
+    if (!message) return;
+    await sendSafely(env, { to: [customer.email], subject: message[0], text: `Hi ${customer.name || 'there'},\n\n${message[1]}\n\nYour account: ${origin(env)}/account.html\n\nVF Tech\nkevinvf@vftech.io` }, `plan-${event}-${customer.id}-${now()}`);
+  }
 
   // ---- Payment rules (spec phase 2) ----
   const DAY = 86400;
