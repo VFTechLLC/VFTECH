@@ -128,11 +128,12 @@
       if(needTerms){var label=element('label','vfs-check'),box=element('input');box.type='checkbox';box.required=true;label.append(box,document.createTextNode(' I have read and agree to the '));var link=element('a','','Terms of Service');link.href='terms.html';link.target='_blank';label.append(link,document.createTextNode(' (version '+(catalog.termsVersion||'1.0')+'), including section 5 for '+name+'.'));form.append(label);}
       var go=element('button','vfs-button',{up:'Upgrade and pay the difference',down:'Schedule the switch',free:'Cancel plan',resume:'Keep my plan',undo:'Keep my plan'}[kind]);go.type='submit';
       var back=element('button','vfs-button vfs-secondary','Never mind');back.type='button';back.addEventListener('click',function(){form.remove();});
-      form.append(go,back);
-      form.addEventListener('submit',async function(event){event.preventDefault();if(!form.reportValidity())return;go.disabled=true;accountStatus.textContent='Updating your plan…';
+      var note=element('p','vfs-small vfs-form-note');note.setAttribute('role','alert');
+      form.append(note,go,back);
+      form.addEventListener('submit',async function(event){event.preventDefault();if(!form.reportValidity())return;go.disabled=true;note.textContent='';accountStatus.textContent='Updating your plan…';
         try{await call('billing/change-plan',{planId:kind==='resume'||kind==='undo'?sub.planId:id,acceptTerms:needTerms},state.csrf);
           accountStatus.textContent={up:'You’re on '+name+' now.',down:'Switch to '+name+' scheduled for '+until+'.',free:'Plan cancelled. It stays active until '+until+'.',resume:'Your plan will renew as usual.',undo:'Scheduled change cancelled.'}[kind];await refreshAccount();}
-        catch(error){accountStatus.textContent=error.message;go.disabled=false;}});
+        catch(error){accountStatus.textContent=error.message;note.textContent=error.message;go.disabled=false;}});
       anchor.after(form);box?box.focus():go.focus();
     }
     function renderBilling(data){

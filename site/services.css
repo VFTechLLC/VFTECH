@@ -61,3 +61,5 @@
 .vfs-plan-card.vfs-tier-priority strong{color:#E8B84A}
 .vfs-plan-card .vfs-button{margin-top:6px}
 @media (max-width:640px){.vfs-feature{flex-direction:column;align-items:flex-start}}
+.vfs-form-note:empty{display:none}
+.vfs-form-note{margin:4px 0 0;color:#B42318;font-weight:600}
