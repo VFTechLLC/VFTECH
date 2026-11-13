@@ -21,6 +21,13 @@ export function fixture(){
       if(method==='GET'&&path==='subscriptions')return Response.json({data:s.subscriptions.filter(x=>x.customer===params.get('customer'))});
       if(method==='GET'&&path.startsWith('subscriptions/')){const sub=s.subscriptions.find(x=>x.id===path.split('/')[1]);return sub?Response.json(sub):Response.json({error:{type:'invalid_request_error'}},{status:404});}
       if(method==='GET'&&path==='invoices')return Response.json({data:s.invoices.filter(x=>x.customer===params.get('customer'))});
+      // Plan changes (phase 1): subscription updates and schedules. s.declineNext makes the next update a card decline.
+      const priceById=id=>Object.values(s.prices).find(p=>p.id===id);
+      if(method==='POST'&&/^subscriptions\/sub_\w+$/.test(path)){const sub=s.subscriptions.find(x=>x.id===path.split('/')[1]);if(!sub)return Response.json({error:{type:'invalid_request_error'}},{status:404});if(s.declineNext&&params.get('items[0][price]')){s.declineNext=false;return Response.json({error:{type:'card_error',code:'card_declined'}},{status:402});}s.updates=(s.updates||[]).concat([{id:sub.id,...Object.fromEntries(params)}]);if(params.has('cancel_at_period_end'))sub.cancel_at_period_end=params.get('cancel_at_period_end')==='true';if(params.get('items[0][price]'))sub.items.data[0].price=priceById(params.get('items[0][price]'));return Response.json(sub);}
+      if(method==='POST'&&path==='subscription_schedules'){const sub=s.subscriptions.find(x=>x.id===params.get('from_subscription'));const sched={id:'sub_sched_'+((s.schedules||[]).length+1),subscription:sub.id,phases:[{start_date:1890000000,end_date:sub.current_period_end,items:[{price:sub.items.data[0].price.id}]}]};s.schedules=(s.schedules||[]).concat([sched]);sub.schedule=sched.id;return Response.json(sched);}
+      if(method==='GET'&&/^subscription_schedules\/\w+$/.test(path))return Response.json((s.schedules||[]).find(x=>x.id===path.split('/')[1]));
+      if(method==='POST'&&/^subscription_schedules\/\w+\/release$/.test(path)){const sched=(s.schedules||[]).find(x=>x.id===path.split('/')[1]);const sub=s.subscriptions.find(x=>x.id===sched.subscription);sub.schedule=null;s.released=(s.released||0)+1;return Response.json({...sched,status:'released'});}
+      if(method==='POST'&&/^subscription_schedules\/\w+$/.test(path)){s.scheduleUpdates=(s.scheduleUpdates||[]).concat([Object.fromEntries(params)]);return Response.json((s.schedules||[]).find(x=>x.id===path.split('/')[1]));}
       return Response.json({error:{type:'invalid_request_error'}},{status:400});}
     throw Error('Unexpected outbound request: '+url);
   };

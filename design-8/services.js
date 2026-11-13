@@ -42,7 +42,7 @@
     if(providers.length){social=element('div','vfs-social');providers.forEach(function(p){var link=element('a','vfs-button vfs-secondary',p[1]);link.href=new URL('auth/'+p[0]+'/start',api).href;social.append(link);});social.append(element('p','vfs-small','Or get a one-time code by email:'));signin.before(social);}
     var signinError=new URLSearchParams(location.search).get('signin_error');if(signinError){accountStatus.textContent=signinError;history.replaceState(null,'',location.pathname);}
     function showLoggedOut(){home.hidden=true;signin.hidden=false;if(social)social.hidden=false;codeForm.hidden=true;document.getElementById('vf-account-title').textContent='Create an account or sign in';state.csrf='';state.challengeId='';codeForm.reset();}
-    async function showAccount(result){state.csrf=result.csrfToken;signin.hidden=true;if(social)social.hidden=true;codeForm.hidden=true;home.hidden=false;document.getElementById('vf-account-title').textContent='Your customer account';document.getElementById('vf-profile').textContent=(result.customer.name||'Customer')+' · '+result.customer.email;accountStatus.textContent='You are signed in.';var list=document.getElementById('vf-requests');list.textContent='Loading your requests…';try{var data=await call('account/requests');list.textContent='';if(!data.requests.length)list.append(element('p','vfs-small','No requests yet. Send a project request using this verified email address.'));data.requests.forEach(function(request){var item=element('article','vfs-request'),selectedPlan=plan(request.planId);item.append(element('strong','',request.business||'Project request'),element('p','',new Date(request.createdAt*1000).toLocaleDateString()+' · '+(request.status==='sent'?'Accepted for email delivery':request.status==='failed'?'Delivery failed':'Processing')),element('p','',request.message));if(selectedPlan)item.append(element('p','',selectedPlan.name+' · '+selectedPlan.price));list.append(item);});}catch(error){list.textContent=error.message;}}
+    async function showAccount(result){state.csrf=result.csrfToken;signin.hidden=true;if(social)social.hidden=true;codeForm.hidden=true;home.hidden=false;document.getElementById('vf-account-title').textContent='Your customer account';state.customer=result.customer;state.plan=result.plan||{tier:'free',name:'Free',status:'none'};renderTier();loadProfile();loadFeatures();accountStatus.textContent='You are signed in.';var list=document.getElementById('vf-requests');list.textContent='Loading your requests…';try{var data=await call('account/requests');list.textContent='';if(!data.requests.length)list.append(element('p','vfs-small','No requests yet. Send a project request using this verified email address.'));data.requests.forEach(function(request){var item=element('article','vfs-request'),selectedPlan=plan(request.planId);item.append(element('strong','',request.business||'Project request'),element('p','',new Date(request.createdAt*1000).toLocaleDateString()+' · '+(request.status==='sent'?'Accepted for email delivery':request.status==='failed'?'Delivery failed':'Processing')),element('p','',request.message));if(selectedPlan)item.append(element('p','',selectedPlan.name+' · '+selectedPlan.price));list.append(item);});}catch(error){list.textContent=error.message;}}
     signin.addEventListener('submit',async function(event){event.preventDefault();if(!signin.reportValidity())return;if(!accountCaptcha.get()){accountStatus.textContent='Complete verification to receive a code.';return;}signSubmit.disabled=true;var fd=new FormData(signin);state.email=String(fd.get('email')).trim().toLowerCase();accountStatus.textContent='Requesting your verification code…';try{var result=await call('auth/request-code',{name:fd.get('name'),email:state.email,website:accountHoney.value,turnstileToken:accountCaptcha.get()});state.challengeId=result.challengeId;signin.hidden=true;codeForm.hidden=false;accountStatus.textContent='A code was accepted for delivery to '+state.email+'. Check your email.';document.getElementById('vf-code').focus();}catch(error){accountStatus.textContent=error.message;}finally{accountCaptcha.reset();}});
     codeForm.addEventListener('submit',async function(event){event.preventDefault();if(!codeForm.reportValidity())return;var submit=codeForm.querySelector('button[type=submit]');submit.disabled=true;accountStatus.textContent='Verifying your code…';try{var result=await call('auth/verify-code',{email:state.email,challengeId:state.challengeId,code:document.getElementById('vf-code').value});codeForm.reset();await showAccount(result);}catch(error){accountStatus.textContent=error.message;}finally{submit.disabled=false;}});
     document.getElementById('vf-change-email').addEventListener('click',function(){showLoggedOut();accountCaptcha.reset();accountStatus.textContent='Enter your email and complete verification for a new code.';document.getElementById('vf-email').focus();});
@@ -70,6 +70,71 @@
       form.addEventListener('submit',function(event){event.preventDefault();if(!form.reportValidity())return;try{sessionStorage.removeItem('vf-subscribe');}catch{}accountStatus.textContent='Opening secure payment…';goTo('billing/checkout',{itemId:id,acceptTerms:true},go);});
       return form;
     }
+    // Accounts & Subscriptions spec, phase 1: plan header with badge and tier theme, profile editing, the plan
+    // features hub and Manage subscription (upgrade now, switch at renewal, cancel to Free, undo).
+    var TIERS=['free','essentials','standard','priority'];
+    function tierName(id){return id==='free'?'Free':(plan(id)||{name:id}).name;}
+    function renderTier(){
+      var p=state.plan||{tier:'free',status:'none'},c=state.customer||{},tier=TIERS.indexOf(p.tier)>=0?p.tier:'free',nm=String(c.name||'').trim();
+      document.getElementById('vf-tier-card').className='vfs-tier vfs-tier-'+tier;
+      document.getElementById('vf-avatar').textContent=(nm?nm.split(/\s+/).slice(0,2).map(function(w){return w.charAt(0);}).join(''):String(c.email||'?').charAt(0)).toUpperCase();
+      document.getElementById('vf-profile').textContent=nm||'Customer';
+      document.getElementById('vf-profile-sub').textContent=[state.business,c.email].filter(Boolean).join(' · ');
+      document.getElementById('vf-plan-badge').textContent=tier==='priority'?'★ Priority':tierName(tier);
+      var line='No plan yet · Free account, no service plan';
+      if(p.status==='past_due'||p.status==='unpaid'||p.status==='incomplete')line=(p.name||'Your plan')+' · payment failed: update your payment method below';
+      else if(p.status!=='none'&&p.cancelAtPeriodEnd&&p.periodEnd)line='Ends '+day(p.periodEnd)+', then Free';
+      else if(p.status!=='none'&&p.pendingPlanName&&p.periodEnd)line='Changes to '+p.pendingPlanName+' on '+day(p.periodEnd);
+      else if(p.status!=='none'&&p.periodEnd)line='Renews '+day(p.periodEnd)+' · '+((plan(p.planId)||{}).price||'');
+      document.getElementById('vf-plan-line').textContent=line;
+    }
+    async function loadProfile(){try{var pr=(await call('account/profile')).profile;state.business=pr.business||'';document.getElementById('vf-p-name').value=pr.name||'';document.getElementById('vf-p-business').value=pr.business||'';document.getElementById('vf-p-phone').value=pr.phone||'';renderTier();}catch{}}
+    var profileForm=document.getElementById('vf-profile-form');
+    if(profileForm)profileForm.addEventListener('submit',async function(event){event.preventDefault();var save=profileForm.querySelector('button[type=submit]');save.disabled=true;var fd=new FormData(profileForm);try{var pr=(await call('account/profile',{name:fd.get('name'),business:fd.get('business'),phone:fd.get('phone')},state.csrf)).profile;state.customer.name=pr.name;state.business=pr.business;renderTier();document.getElementById('vf-profile-edit').open=false;accountStatus.textContent='Profile saved.';}catch(error){accountStatus.textContent=error.message;}finally{save.disabled=false;}});
+    async function loadFeatures(){
+      var body=document.getElementById('vf-features-body');if(!body)return;body.textContent='Loading…';
+      try{
+        var d=await call('account/features');body.textContent='';
+        var list=element('ul','vfs-feature-list');
+        d.included.forEach(function(f){var li=element('li','vfs-feature'),text=element('div');text.append(element('strong','',f.label));if(f.detail)text.append(element('span','vfs-small',f.detail));li.append(text);
+          if(f.href){var a=element('a','vfs-button vfs-secondary',f.id==='phone'?'Call':f.id==='email'?'Email':'Open');a.href=f.href;if(f.type==='portal'){a.target='_blank';a.rel='noopener';}li.append(a);}list.append(li);});
+        body.append(list);
+        if(d.locked.length){body.append(element('h4','','Available on higher plans'));var locked=element('ul','vfs-feature-list vfs-locked');
+          d.locked.forEach(function(f){var li=element('li','vfs-feature'),text=element('div');text.append(element('strong','',f.label),element('span','vfs-small','Included in '+f.unlockPlanName));li.append(text);locked.append(li);});
+          body.append(locked);var compare=element('button','vfs-button vfs-secondary','Compare plans');compare.type='button';compare.addEventListener('click',function(){if(billingBox&&!billingBox.hidden)billingBox.scrollIntoView({behavior:'smooth',block:'start'});else location.href='features.html';});body.append(compare);}
+      }catch(error){body.textContent=error.message;}
+    }
+    async function refreshAccount(){billingResult=null;try{var s=await call('session');if(s.authenticated){state.plan=s.plan;renderTier();}}catch{}loadFeatures();loadBilling();}
+    function planPicker(sub){
+      var grid=element('div','vfs-plan-grid'),rank=function(id){return TIERS.indexOf(id);},until=sub.currentPeriodEnd?day(sub.currentPeriodEnd):'';
+      TIERS.forEach(function(id){
+        var card=element('div','vfs-plan-card vfs-tier-'+id),p=plan(id),label,kind=null;
+        card.append(element('strong','',id==='priority'?'★ Priority':tierName(id)),element('span','vfs-small',id==='free'?'$0 · no service plan':p.price.replace('/mo',' a month')));
+        if(id===sub.planId){if(sub.cancelAtPeriodEnd){label='Keep '+tierName(id);kind='resume';}else if(sub.pendingPlanId){label='Keep '+tierName(id);kind='undo';}else label='Your plan';}
+        else if(id==='free'){if(sub.cancelAtPeriodEnd)label='From '+until;else{label='Cancel plan';kind='free';}}
+        else if(id===sub.pendingPlanId)label='Starts '+until;
+        else if(rank(id)>rank(sub.planId)){label='Upgrade now';kind='up';}
+        else{label='Switch at renewal';kind='down';}
+        var button=element('button','vfs-button'+(kind==='up'?'':' vfs-secondary'),label);button.type='button';
+        if(kind)button.addEventListener('click',function(){confirmChange(id,kind,sub,grid);});else button.disabled=true;
+        card.append(button);grid.append(card);
+      });
+      return grid;
+    }
+    function confirmChange(id,kind,sub,anchor){
+      var previous=document.getElementById('vf-change-form');if(previous)previous.remove();
+      var form=element('form','vfs-form vfs-subscribe'),name=tierName(id),until=sub.currentPeriodEnd?day(sub.currentPeriodEnd):'the end of your billing period',needTerms=kind==='up'||kind==='down';form.id='vf-change-form';
+      form.append(element('p','',{up:'Upgrade to '+name+' now. Today you pay the prorated difference for the rest of this billing period; after that, '+((plan(id)||{}).price||'').replace('/mo',' a month')+' plus tax where it applies.',down:'Switch to '+name+' on '+until+'. You keep '+tierName(sub.planId)+' until then, and nothing is charged today.',free:'Cancel your plan. It stays active until '+until+', then your account continues as Free, with no service plan. No refund for the current period.',resume:'Keep '+name+'. It will renew as usual on '+until+'.',undo:'Keep '+name+' and cancel the scheduled change.'}[kind]));
+      if(needTerms){var label=element('label','vfs-check'),box=element('input');box.type='checkbox';box.required=true;label.append(box,document.createTextNode(' I have read and agree to the '));var link=element('a','','Terms of Service');link.href='terms.html';link.target='_blank';label.append(link,document.createTextNode(' (version '+(catalog.termsVersion||'1.0')+'), including section 5 for '+name+'.'));form.append(label);}
+      var go=element('button','vfs-button',{up:'Upgrade and pay the difference',down:'Schedule the switch',free:'Cancel plan',resume:'Keep my plan',undo:'Keep my plan'}[kind]);go.type='submit';
+      var back=element('button','vfs-button vfs-secondary','Never mind');back.type='button';back.addEventListener('click',function(){form.remove();});
+      form.append(go,back);
+      form.addEventListener('submit',async function(event){event.preventDefault();if(!form.reportValidity())return;go.disabled=true;accountStatus.textContent='Updating your plan…';
+        try{await call('billing/change-plan',{planId:kind==='resume'||kind==='undo'?sub.planId:id,acceptTerms:needTerms},state.csrf);
+          accountStatus.textContent={up:'You’re on '+name+' now.',down:'Switch to '+name+' scheduled for '+until+'.',free:'Plan cancelled. It stays active until '+until+'.',resume:'Your plan will renew as usual.',undo:'Scheduled change cancelled.'}[kind];await refreshAccount();}
+        catch(error){accountStatus.textContent=error.message;go.disabled=false;}});
+      anchor.after(form);box?box.focus():go.focus();
+    }
     function renderBilling(data){
       billingBody.textContent='';
       var sub=data.subscription;
@@ -77,7 +142,9 @@
         var states={active:'Active',trialing:'Active',past_due:'Payment failed',unpaid:'Payment failed',incomplete:'Waiting for payment'};
         var line=element('p','vfs-plan-line');line.append(element('strong','',sub.planName+' plan'),document.createTextNode(' · '+(states[sub.status]||sub.status)));billingBody.append(line);
         if(sub.currentPeriodEnd)billingBody.append(element('p','vfs-small',sub.cancelAtPeriodEnd?'Cancelled: active until '+day(sub.currentPeriodEnd)+', then it stops. No further charges.':'Renews on '+day(sub.currentPeriodEnd)+'.'));
-        if(sub.status==='past_due'||sub.status==='unpaid')billingBody.append(element('p','vfs-status','Your last payment didn’t go through. Update your card in Manage billing to keep the plan.'));
+        if(sub.status==='past_due'||sub.status==='unpaid')billingBody.append(element('p','vfs-status','Your last payment didn’t go through. Update your payment method below to keep the plan.'));
+        if(sub.pendingPlanName&&sub.currentPeriodEnd)billingBody.append(element('p','vfs-small','Switching to '+sub.pendingPlanName+' on '+day(sub.currentPeriodEnd)+'.'));
+        if(sub.status==='active'||sub.status==='trialing')billingBody.append(planPicker(sub));
       }
       if(wantedPlan&&!(sub&&monthly(wantedPlan))){billingBody.append(subscribeForm(wantedPlan));}
       else if(sub){if(wantedPlan)accountStatus.textContent='You already have a plan. Use Manage billing to change or cancel it.';}
@@ -85,7 +152,7 @@
         billingBody.append(element('p','vfs-small','You don’t have a monthly plan yet.'));
         var choices=element('div','vfs-plan-choices');catalog.plans.forEach(function(p){var b=element('button','vfs-button vfs-secondary','Choose '+p.name+' · '+p.price);b.type='button';b.addEventListener('click',function(){wantedPlan=p.id;renderBilling(data);});choices.append(b);});billingBody.append(choices);
       }
-      if(sub||data.invoices.length){var manage=element('button','vfs-button','Manage billing: change card, see invoices or cancel');manage.type='button';manage.addEventListener('click',function(){accountStatus.textContent='Opening billing…';goTo('billing/portal',{},manage);});billingBody.append(manage);}
+      if(sub||data.invoices.length){var manage=element('button','vfs-button vfs-secondary','Payment methods and invoices');manage.type='button';manage.addEventListener('click',function(){accountStatus.textContent='Opening billing…';goTo('billing/portal',{},manage);});billingBody.append(manage);}
       if(data.invoices.length){
         billingBody.append(element('h4','','Billing history'));
         var table=element('table','vfs-invoices'),head=element('tr');['Date','Invoice','Amount','Tax','Status',''].forEach(function(h){head.append(element('th','',h));});var thead=element('thead');thead.append(head);table.append(thead);var tbody=element('tbody');

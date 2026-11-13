@@ -1,5 +1,7 @@
 # VFTech client services
 
+> **Current work:** Accounts & Subscriptions. Status, next steps and remaining phases: [`docs/ACCOUNTS-ROADMAP.md`](../docs/ACCOUNTS-ROADMAP.md).
+
 The public GitHub Pages site includes a local site guide, interactive feature
 examples, published prices and an account portal. Real email and account creation
 remain disabled until the business configures delivery. The contact form prepares
@@ -108,3 +110,22 @@ References: [Turnstile verification](https://developers.cloudflare.com/turnstile
 [Worker assets](https://developers.cloudflare.com/workers/static-assets/routing/worker-script/),
 [D1 migrations](https://developers.cloudflare.com/d1/reference/migrations/),
 [Resend email API](https://resend.com/docs/api-reference/emails/send-email).
+
+## Accounts & subscriptions, phase 1 (2026-11-13)
+
+From the Accounts & Subscriptions spec (Claude Doc, shared by Kevin). Tests: `tests/account.test.mjs`.
+
+| Endpoint | What it does |
+| --- | --- |
+| `GET /api/session` | Now also returns `plan`: `tier` (free, essentials, standard, priority), `status`, `periodEnd`, `cancelAtPeriodEnd`, `pendingPlanId`/`pendingPlanName`. `past_due` keeps the tier; `unpaid`/`incomplete` drop features to Free. |
+| `GET/POST /api/account/profile` | Name, business, phone (POST needs the CSRF header). Email changes are phase 2, with recovery. |
+| `GET /api/account/features` | The plan's features from `catalog.features` (generated in `scripts/build-services.mjs`), each with its button, plus locked ones with the plan that unlocks them. The client-portal button shows only when `customers.portal_url` holds an https URL. |
+| `POST /api/billing/change-plan {planId, acceptTerms}` | Higher plan: immediate, prorated difference charged now (`error_if_incomplete`, so a declined card changes nothing and returns 402). Lower plan: Stripe subscription schedule, switches at period end. `free`: cancel at period end. Same plan again: undo a pending downgrade or resume a cancellation. Paid moves need `acceptTerms`; every change lands in `plan_events`, every acceptance in `terms_acceptances` (version + keyed IP hash). Checkout now records acceptances too. |
+
+Before deploying:
+
+1. Apply the migration: `npx wrangler d1 migrations apply <db> --remote --config backend/wrangler.jsonc` (adds `0003_accounts.sql`).
+2. Stripe dashboard → Customer portal settings: turn **off** "Customers can switch plans", so plan changes only go through `/api/billing/change-plan` (proration, schedules and Terms acceptance live there). Keep payment methods, invoices and cancellation on.
+3. Each plan needs its `vftech_<plan>_monthly` price (already created by `scripts/stripe-sync.mjs`); upgrades and downgrades look prices up the same way Checkout does.
+
+To give a customer a portal button: `UPDATE customers SET portal_url='https://…' WHERE email='…'` in the D1 console (admin view comes in phase 4).

@@ -60,5 +60,155 @@
       "kind": "maintenance",
       "description": "Hosting, domain, SSL, backups: Yes. Uptime monitoring: Yes. Security and dependency updates: Yes. AI update assistant: Yes. Changes handled by us: 8 hrs/mo. Response time: 4 business hours. Traffic and lead report: Monthly. Search and content work: Quarterly"
     }
+  ],
+  "features": [
+    {
+      "id": "request",
+      "type": "link",
+      "label": "Send a request",
+      "href": "contact.html",
+      "plans": [
+        "free",
+        "essentials",
+        "standard",
+        "priority"
+      ],
+      "detail": {
+        "free": "Questions about our services, or a quote for new work",
+        "essentials": "Changes and support for your website",
+        "standard": "Changes and support for your website",
+        "priority": "Flagged as Priority when it arrives"
+      }
+    },
+    {
+      "id": "email",
+      "type": "contact",
+      "label": "Email us",
+      "href": "mailto:kevinvf@vftech.io",
+      "plans": [
+        "free",
+        "essentials",
+        "standard",
+        "priority"
+      ]
+    },
+    {
+      "id": "phone",
+      "type": "contact",
+      "label": "Call us",
+      "href": "tel:+14257615502",
+      "plans": [
+        "essentials",
+        "standard",
+        "priority"
+      ]
+    },
+    {
+      "id": "portal",
+      "type": "portal",
+      "label": "Open your client portal",
+      "plans": [
+        "essentials",
+        "standard",
+        "priority"
+      ]
+    },
+    {
+      "id": "response",
+      "type": "included",
+      "label": "Response time",
+      "plans": [
+        "free",
+        "essentials",
+        "standard",
+        "priority"
+      ],
+      "detail": {
+        "free": "48–72 hours on average, for questions about our services; no support for your website",
+        "essentials": "Within 3 business days",
+        "standard": "By the next business day",
+        "priority": "Within 4 business hours"
+      }
+    },
+    {
+      "id": "hosting",
+      "type": "included",
+      "label": "Hosting, domain and SSL",
+      "plans": [
+        "essentials",
+        "standard",
+        "priority"
+      ]
+    },
+    {
+      "id": "backups",
+      "type": "included",
+      "label": "Daily backups, kept 30 days",
+      "plans": [
+        "essentials",
+        "standard",
+        "priority"
+      ]
+    },
+    {
+      "id": "monitoring",
+      "type": "included",
+      "label": "Uptime monitoring, security and dependency updates",
+      "plans": [
+        "essentials",
+        "standard",
+        "priority"
+      ]
+    },
+    {
+      "id": "hours",
+      "type": "included",
+      "label": "Change hours each month",
+      "plans": [
+        "essentials",
+        "standard",
+        "priority"
+      ],
+      "detail": {
+        "essentials": "1 hour",
+        "standard": "3 hours",
+        "priority": "8 hours"
+      }
+    },
+    {
+      "id": "third-party",
+      "type": "included",
+      "label": "Third-party service costs included",
+      "plans": [
+        "standard",
+        "priority"
+      ]
+    },
+    {
+      "id": "ai",
+      "type": "included",
+      "label": "AI update assistant",
+      "plans": [
+        "standard",
+        "priority"
+      ]
+    },
+    {
+      "id": "report",
+      "type": "included",
+      "label": "Monthly traffic and lead report",
+      "plans": [
+        "standard",
+        "priority"
+      ]
+    },
+    {
+      "id": "review",
+      "type": "included",
+      "label": "Quarterly technology and search review",
+      "plans": [
+        "priority"
+      ]
+    }
   ]
 }
