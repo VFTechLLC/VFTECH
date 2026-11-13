@@ -102,3 +102,11 @@
 .vfs-paywall p{margin:0}
 .vfs-paywall-actions{display:flex;gap:10px;flex-wrap:wrap}
 .vfs-account-locked #vf-profile-edit,.vfs-account-locked #vf-features{display:none}
+
+/* Your data and account (Accounts spec, phase 3). */
+.vfs-close{margin:22px 0 14px;padding-top:16px;border-top:1px solid var(--rule-strong,#c8cfdb);display:grid;gap:10px}
+.vfs-close h3,.vfs-close p{margin:0}
+.vfs-close-actions{display:flex;gap:10px;flex-wrap:wrap}
+.vfs-close-box{display:grid;gap:10px;padding:16px;border:1px solid var(--rule-strong,#c8cfdb);border-radius:12px}
+.vfs-close-box p{margin:0}
+.vfs-button.vfs-danger{background:#B42318;border-color:#B42318;color:#fff}

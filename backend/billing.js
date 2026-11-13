@@ -358,5 +358,5 @@ export function billing({ HTTPError, json, now, origin, catalog, audit }) {
     return { checked: rows.length, sent, closed };
   }
 
-  return { enabled, live, enabledFor, status, checkout, portal, webhook, changePlan, dunning, refreshCard };
+  return { enabled, live, enabledFor, status, checkout, portal, webhook, changePlan, dunning, refreshCard, stripe };
 }

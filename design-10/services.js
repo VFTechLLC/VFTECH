@@ -47,11 +47,12 @@
   function paymentBanner(session){
     var old=document.getElementById('vfs-pay-banner');if(old)old.remove();
     var p=session&&session.plan,notice=paymentNotice(p),main=document.querySelector('main');
+    if(!notice&&session&&session.customer&&session.customer.closingAt)notice={text:'Your account closes on '+shortDate(session.customer.closingAt)+'. Until then you can change your mind.',action:'Keep my account',run:async function(button){button.disabled=true;try{await call('account/keep',{},session.csrfToken);location.reload();}catch(error){button.disabled=false;button.textContent=error.message;}}};
     if(!notice||!main)return;
-    if(LOCKED[p.standing]&&document.getElementById('vf-account-home'))return; // the payment screen says it already
+    if(p&&LOCKED[p.standing]&&document.getElementById('vf-account-home'))return; // the payment screen says it already
     var bar=element('div','vfs-pay-banner'+(LOCKED[p.standing]?' vfs-pay-banner-urgent':''));bar.id='vfs-pay-banner';bar.setAttribute('role','status');
     var inner=element('div','vfs-pay-banner-inner');inner.append(element('p','',notice.text));
-    var go;if(notice.portal){go=element('button','vfs-button',notice.action);go.type='button';go.addEventListener('click',function(){openPortal(session.csrfToken,go);});}
+    var go;if(notice.portal||notice.run){go=element('button','vfs-button',notice.action);go.type='button';go.addEventListener('click',function(){if(notice.run)notice.run(go);else openPortal(session.csrfToken,go);});}
     else{go=element('a','vfs-button',notice.action);go.href=notice.href;}
     inner.append(go);bar.append(inner);main.prepend(bar);
   }
@@ -192,6 +193,37 @@
       wall.append(actions,element('p','vfs-small','Until then, only billing, contact and sign out are available.'));
       document.getElementById('vf-tier-card').after(wall);
     }
+    // Your data and account (Accounts spec, phase 3): download everything as JSON, or close the account.
+    var exportButton=document.getElementById('vf-export'),closeStart=document.getElementById('vf-close-start'),closeBody=document.getElementById('vf-close-body');
+    if(exportButton)exportButton.addEventListener('click',async function(){exportButton.disabled=true;try{var response=await fetch(new URL('account/export',api),{credentials:'same-origin'});if(!response.ok)throw Error((await response.json().catch(function(){return {};})).error||'The download could not start.');var link=element('a');link.href=URL.createObjectURL(await response.blob());link.download='vftech-account-data.json';document.body.append(link);link.click();link.remove();setTimeout(function(){URL.revokeObjectURL(link.href);},10000);}catch(error){closeBody.textContent=error.message;}finally{exportButton.disabled=false;}});
+    if(closeStart)closeStart.addEventListener('click',function(){
+      closeBody.textContent='';closeStart.hidden=true;
+      var p=state.plan||{},paid=p.tier&&p.tier!=='free'&&p.periodEnd&&!p.cancelAtPeriodEnd,when=paid?shortDate(p.periodEnd):shortDate(Math.floor(Date.now()/1000)+14*86400);
+      var box=element('div','vfs-close-box');
+      box.append(element('p','',paid?'Your '+p.name+' plan stops renewing and your account stays open until '+when+', then closes. You can change your mind until then. Or close now: the plan and the account end straight away, with no refund for the rest of the period.':'Your account closes in 14 days, on '+when+'. You can change your mind until then, or close it now.'),
+        element('p','vfs-small','Closing deletes your profile, sign-ins and requests. Invoices stay with our payment provider as tax records. Download your data first if you want a copy.'));
+      var send=element('button','vfs-button','Email me a code');send.type='button';
+      var cancel=element('button','vfs-button vfs-secondary','Never mind');cancel.type='button';cancel.addEventListener('click',function(){closeBody.textContent='';closeStart.hidden=false;});
+      var note=element('p','vfs-small vfs-form-note');note.setAttribute('role','alert');
+      box.append(send,cancel,note);closeBody.append(box);send.focus();
+      send.addEventListener('click',async function(){send.disabled=true;note.textContent='';
+        try{var challenge=await call('account/close/code',{},state.csrf);}catch(error){note.textContent=error.message;send.disabled=false;return;}
+        send.remove();
+        var form=element('form','vfs-form'),emailLabel=element('label','','Type your email to confirm'),emailInput=element('input'),codeLabel=element('label','','The six-digit code we just emailed you'),codeInput=element('input');
+        emailInput.type='email';emailInput.id='vf-close-email';emailInput.required=true;emailInput.autocomplete='off';emailLabel.htmlFor='vf-close-email';
+        codeInput.id='vf-close-code';codeInput.required=true;codeInput.inputMode='numeric';codeInput.pattern='[0-9]{6}';codeInput.maxLength=6;codeInput.autocomplete='one-time-code';codeLabel.htmlFor='vf-close-code';
+        var later=element('button','vfs-button',paid?'Close my account on '+when:'Close my account in 14 days');later.type='submit';later.value='period_end';
+        var now=element('button','vfs-button vfs-danger','Close now');now.type='submit';now.value='now';
+        form.append(emailLabel,emailInput,codeLabel,codeInput,later,now);box.insertBefore(form,cancel);emailInput.focus();
+        form.addEventListener('submit',async function(event){event.preventDefault();if(!form.reportValidity())return;var choice=event.submitter&&event.submitter.value==='now'?'now':'period_end';
+          if(choice==='now'&&!confirm('Close your account now? This can’t be undone.'))return;
+          later.disabled=now.disabled=true;note.textContent='';
+          try{var result=await call('account/close',{email:emailInput.value,challengeId:challenge.challengeId,code:codeInput.value,when:choice},state.csrf);
+            if(result.closed){closeBody.textContent='';closeBody.append(element('p','','Your account is closed. Thank you for working with us.'));setTimeout(function(){location.href='index.html';},2500);}
+            else location.reload();}
+          catch(error){note.textContent=error.message;later.disabled=now.disabled=false;}});
+      });
+    });
     async function loadFeatures(){
       var body=document.getElementById('vf-features-body');if(!body)return;body.textContent='Loading…';
       try{
