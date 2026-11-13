@@ -4,6 +4,12 @@
   var contact=document.getElementById('book-form'),signin=document.getElementById('vf-account-form');
   function element(tag,cls,text){var node=document.createElement(tag);if(cls)node.className=cls;if(text)node.textContent=text;return node;}
   function plan(id){return catalog.builds.concat(catalog.plans).find(function(p){return p.id===id;});}
+  // Annual plans (Accounts spec, phase 4): ten times the monthly price, two months free.
+  function monthlyCents(p){var m=/^\$([\d,]+)/.exec(p&&p.price||'');return m?Number(m[1].replace(/,/g,''))*100:0;}
+  function usd(c){return '$'+(c/100).toLocaleString('en-US');}
+  function priceText(p,interval){return interval==='year'?usd(monthlyCents(p)*10)+' a year':String(p&&p.price||'').replace('/mo',' a month');}
+  function savingText(p){return usd(monthlyCents(p)*2);}
+  var cardInterval='month';
   var api;
   try{api=settings.apiBase?new URL(settings.apiBase.replace(/\/$/,'')+'/',location.origin):null;if(api&&api.origin!==location.origin)api=null;}catch{api=null;}
   async function call(path,data,csrf){var headers={'Accept':'application/json'};if(data!==undefined)headers['Content-Type']='application/json';if(csrf)headers['X-CSRF-Token']=csrf;var response=await fetch(new URL(path,api),{method:data===undefined?'GET':'POST',credentials:'same-origin',headers:headers,body:data===undefined?undefined:JSON.stringify(data),signal:AbortSignal.timeout(15000)});var result;try{result=await response.json();}catch{throw Error('The service could not respond. Please try again.');}if(!response.ok)throw Error(result.error||'The request could not be completed.');return result;}
@@ -23,12 +29,22 @@
     document.querySelectorAll('[data-vf-plan-card]').forEach(function(card){
       var id=card.getAttribute('data-vf-plan-card'),link=card.querySelector('[data-vf-subscribe]');if(!link)return;
       var name=tierLabel(id);card.classList.remove('vfs-current');link.removeAttribute('aria-current');link.classList.remove('vfs-secondary');
-      if(!tier||tier==='free'){link.textContent=(tier?'Upgrade to ':'Choose ')+name;link.href='account.html?subscribe='+id;return;}
+      if(!tier||tier==='free'){link.textContent=(tier?'Upgrade to ':'Choose ')+name;link.href='account.html?subscribe='+id+(cardInterval==='year'?'&interval=year':'');return;}
       link.hidden=false;link.href='account.html#vf-billing';
       if(id===tier){link.textContent='Your plan';link.setAttribute('aria-current','true');card.classList.add('vfs-current');}
       else{link.textContent='Manage subscription';link.classList.add('vfs-secondary');}
     });
   }
+  document.querySelectorAll('[data-vf-interval]').forEach(function(button){button.addEventListener('click',function(){
+    cardInterval=button.getAttribute('data-vf-interval');
+    document.querySelectorAll('[data-vf-interval]').forEach(function(b){b.setAttribute('aria-pressed',String(b===button));});
+    document.querySelectorAll('[data-vf-plan-card]').forEach(function(card){
+      var value=card.querySelector('[data-vf-monthly]'),save=card.querySelector('[data-vf-saving]'),link=card.querySelector('[data-vf-subscribe]');
+      if(value)value.textContent=value.getAttribute(cardInterval==='year'?'data-vf-yearly':'data-vf-monthly');
+      if(save)save.hidden=cardInterval!=='year';
+      if(link&&/subscribe=/.test(link.getAttribute('href')||''))link.href='account.html?subscribe='+card.getAttribute('data-vf-plan-card')+(cardInterval==='year'?'&interval=year':'');
+    });
+  });});
   // Payment rules (spec phase 2): one banner on every page while a payment is owed, a dispute or missing payment
   // method locks the account, or the card on file expires soon. The account page shows the payment screen instead.
   function shortDate(seconds){return new Date(seconds*1000).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric',timeZone:'UTC'});}
@@ -133,23 +149,29 @@
     // invoices with tax. Subscribing goes through Stripe Checkout after the Terms are accepted. Only when the Worker
     // says billing is on.
     var billingBox=document.getElementById('vf-billing'),billingBody=document.getElementById('vf-billing-body');
-    var query=new URLSearchParams(location.search),wantedPlan=query.get('subscribe')||query.get('buy'),billingResult=query.get('billing');
+    var query=new URLSearchParams(location.search),wantedPlan=query.get('subscribe')||query.get('buy'),billingResult=query.get('billing'),wantedInterval=query.get('interval')==='year'?'year':'month';
+    try{if(query.get('subscribe'))sessionStorage.setItem('vf-subscribe-interval',wantedInterval);else wantedInterval=sessionStorage.getItem('vf-subscribe-interval')==='year'?'year':'month';}catch{}
     try{if(wantedPlan&&plan(wantedPlan))sessionStorage.setItem('vf-subscribe',wantedPlan);else wantedPlan=sessionStorage.getItem('vf-subscribe');}catch{}
     if(wantedPlan&&!plan(wantedPlan))wantedPlan=null;
     function monthly(id){return catalog.plans.some(function(p){return p.id===id;});}
-    if(billingResult||query.get('subscribe')||query.get('buy'))history.replaceState(null,'',location.pathname);
+    if(billingResult||query.get('subscribe')||query.get('buy')||query.get('interval'))history.replaceState(null,'',location.pathname);
     if(wantedPlan&&settings.billingEnabled)accountStatus.textContent='Sign in to '+(monthly(wantedPlan)?'subscribe to ':'pay for ')+plan(wantedPlan).name+'.';
     function money(cents,currency){return (cents/100).toLocaleString('en-US',{style:'currency',currency:(currency||'usd').toUpperCase()});}
     function day(seconds){return new Date(seconds*1000).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}
     async function goTo(path,data,button){button.disabled=true;try{var result=await call(path,data,state.csrf);location.href=result.url;}catch(error){accountStatus.textContent=error.message;button.disabled=false;}}
     function subscribeForm(id){
       var chosen=plan(id),recurring=monthly(id),form=element('form','vfs-form vfs-subscribe');
-      form.append(element('p','',recurring?'Subscribe to '+chosen.name+' for '+chosen.price.replace('/mo',' a month')+', plus tax where it applies. Billed monthly; cancel any time from this page.':'Pay for '+chosen.name+': '+chosen.price.replace(' Fixed','')+' one-time, plus tax where it applies. The receipt will appear in your billing history.'));
+      var interval=wantedInterval,summary=element('p','');
+      function describe(){summary.textContent='Subscribe to '+chosen.name+' for '+priceText(chosen,interval)+', plus tax where it applies. '+(interval==='year'?'Billed yearly, two months free ('+savingText(chosen)+' less than monthly); we remind you 30 days before it renews. Switch to monthly or cancel from this page; either takes effect at the end of the year.':'Billed monthly; cancel any time from this page.');}
+      if(recurring){var toggle=element('div','vfs-range vfs-interval');toggle.setAttribute('role','group');toggle.setAttribute('aria-label','Billing period');
+        [['month','Monthly · '+priceText(chosen,'month')],['year','Annual · '+priceText(chosen,'year')]].forEach(function(o){var b=element('button','',o[1]);b.type='button';b.setAttribute('data-vf-choose-interval',o[0]);b.setAttribute('aria-pressed',String(o[0]===interval));b.addEventListener('click',function(){interval=o[0];toggle.querySelectorAll('button').forEach(function(x){x.setAttribute('aria-pressed',String(x===b));});describe();});toggle.append(b);});
+        describe();form.append(toggle,summary);}
+      else form.append(element('p','',recurring?'':'Pay for '+chosen.name+': '+chosen.price.replace(' Fixed','')+' one-time, plus tax where it applies. The receipt will appear in your billing history.'));
       var label=element('label','vfs-check'),box=element('input');box.type='checkbox';box.required=true;box.id='vf-accept-terms';label.append(box,document.createTextNode(' I have read and agree to the '));var link=element('a','','Terms of Service');link.href='terms.html';link.target='_blank';label.append(link,document.createTextNode(' (version '+(catalog.termsVersion||'1.0')+')'+(recurring?', including section 5 for '+chosen.name+'. Renews automatically; no refunds for partial periods.':'.')));
       var go=element('button','vfs-button','Continue to secure payment');go.type='submit';
       var other=element('button','vfs-button vfs-secondary',recurring?'Choose another plan':'Not now');other.type='button';other.addEventListener('click',function(){try{sessionStorage.removeItem('vf-subscribe');}catch{}renderBilling({enabled:true,subscription:null,invoices:[]});});
       form.append(label,go,other);
-      form.addEventListener('submit',function(event){event.preventDefault();if(!form.reportValidity())return;try{sessionStorage.removeItem('vf-subscribe');}catch{}accountStatus.textContent='Opening secure payment…';goTo('billing/checkout',{itemId:id,acceptTerms:true},go);});
+      form.addEventListener('submit',function(event){event.preventDefault();if(!form.reportValidity())return;try{sessionStorage.removeItem('vf-subscribe');sessionStorage.removeItem('vf-subscribe-interval');}catch{}accountStatus.textContent='Opening secure payment…';goTo('billing/checkout',recurring?{itemId:id,interval:interval,acceptTerms:true}:{itemId:id,acceptTerms:true},go);});
       return form;
     }
     // Accounts & Subscriptions spec, phase 1: plan header with badge and tier theme, profile editing, the plan
@@ -166,8 +188,8 @@
       var line='No plan yet · Free account, no service plan';
       if(p.status==='past_due'||p.status==='unpaid'||p.status==='incomplete')line=(p.name||'Your plan')+' · payment failed: update your payment method below';
       else if(p.status!=='none'&&p.cancelAtPeriodEnd&&p.periodEnd)line='Ends '+day(p.periodEnd)+', then Free';
-      else if(p.status!=='none'&&p.pendingPlanName&&p.periodEnd)line='Changes to '+p.pendingPlanName+' on '+day(p.periodEnd);
-      else if(p.status!=='none'&&p.periodEnd)line='Renews '+day(p.periodEnd)+' · '+((plan(p.planId)||{}).price||'');
+      else if(p.status!=='none'&&p.pendingPlanName&&p.periodEnd)line='Changes to '+p.pendingPlanName+(p.pendingInterval&&p.pendingInterval!==p.interval?(p.pendingInterval==='year'?' annual':' monthly'):'')+' on '+day(p.periodEnd);
+      else if(p.status!=='none'&&p.periodEnd)line='Renews '+day(p.periodEnd)+' · '+priceText(plan(p.planId),p.interval)+(p.interval==='year'?' (annual)':'');
       document.getElementById('vf-plan-line').textContent=line;
     }
     async function loadProfile(){try{var pr=(await call('account/profile')).profile;state.business=pr.business||'';document.getElementById('vf-p-name').value=pr.name||'';document.getElementById('vf-p-business').value=pr.business||'';document.getElementById('vf-p-phone').value=pr.phone||'';renderTier();}catch{}}
@@ -230,7 +252,7 @@
       try{var events=(await call('account/history')).events||[];body.textContent='';
         if(!events.length){body.append(element('p','vfs-small','No plan changes yet.'));return;}
         var list=element('ul','vfs-history');
-        events.forEach(function(e){var a=e.fromName,b=e.toName;var text={subscribed:'Started '+b,upgraded:'Upgraded from '+a+' to '+b,downgrade_scheduled:'Scheduled a switch from '+a+' to '+b,change_undone:'Kept '+a+' (scheduled switch cancelled)',cancel_scheduled:'Cancelled '+a+(e.reason?' ('+e.reason+')':''),resumed:'Kept '+a+' (cancellation undone)',closed_unpaid:a+' closed after 90 days unpaid',account_close_scheduled:'Asked to close the account',account_close_cancelled:'Kept the account'}[e.type]||e.type;
+        events.forEach(function(e){var a=e.fromName,b=e.toName;var text={subscribed:'Started '+b,upgraded:'Upgraded from '+a+' to '+b,downgrade_scheduled:'Scheduled a switch from '+a+' to '+b,switch_scheduled:'Scheduled a switch from '+a+' to '+b,switched_annual:'Switched '+a+' to annual billing',change_undone:'Kept '+a+' (scheduled switch cancelled)',cancel_scheduled:'Cancelled '+a+(e.reason?' ('+e.reason+')':''),resumed:'Kept '+a+' (cancellation undone)',closed_unpaid:a+' closed after 90 days unpaid',account_close_scheduled:'Asked to close the account',account_close_cancelled:'Kept the account'}[e.type]||e.type;
           var li=element('li');li.append(element('span','vfs-small',shortDate(e.at)),document.createTextNode(' '+text));list.append(li);});
         body.append(list);}
       catch(error){body.textContent=error.message;}
@@ -249,42 +271,49 @@
       }catch(error){body.textContent=error.message;}
     }
     async function refreshAccount(){billingResult=null;try{var s=await call('session');if(s.authenticated){state.plan=s.plan;renderTier();}}catch{}loadFeatures();loadBilling();}
-    function planPicker(sub){
-      var grid=element('div','vfs-plan-grid'),rank=function(id){return TIERS.indexOf(id);},until=sub.currentPeriodEnd?day(sub.currentPeriodEnd):'';
+    function planPicker(sub,interval){
+      var box=element('div'),grid=element('div','vfs-plan-grid'),rank=function(id){return TIERS.indexOf(id);},until=sub.currentPeriodEnd?day(sub.currentPeriodEnd):'',current=sub.interval==='year'?'year':'month';
+      interval=interval||current;
+      var toggle=element('div','vfs-range vfs-interval');toggle.setAttribute('role','group');toggle.setAttribute('aria-label','Billing period');
+      [['month','Monthly'],['year','Annual · 2 months free']].forEach(function(o){var b=element('button','',o[1]);b.type='button';b.setAttribute('data-vf-choose-interval',o[0]);b.setAttribute('aria-pressed',String(o[0]===interval));b.addEventListener('click',function(){var previous=document.getElementById('vf-change-form');if(previous)previous.remove();box.replaceWith(planPicker(sub,o[0]));});toggle.append(b);});
+      box.append(toggle,grid);
       TIERS.forEach(function(id){
-        var card=element('div','vfs-plan-card vfs-tier-'+id),p=plan(id),label,kind=null;
-        card.append(element('strong','',id==='priority'?'★ Priority':tierName(id)),element('span','vfs-small',id==='free'?'$0 · no service plan':p.price.replace('/mo',' a month')));
-        if(id===sub.planId){if(sub.cancelAtPeriodEnd){label='Keep '+tierName(id);kind='resume';}else if(sub.pendingPlanId){label='Keep '+tierName(id);kind='undo';}else label='Your plan';}
+        var card=element('div','vfs-plan-card vfs-tier-'+id),p=plan(id),label,kind=null,same=interval===current,pending=id===sub.pendingPlanId&&(sub.pendingInterval||current)===interval;
+        card.append(element('strong','',id==='priority'?'★ Priority':tierName(id)),element('span','vfs-small',id==='free'?'$0 · no service plan':priceText(p,interval)));
+        if(id!=='free'&&interval==='year')card.append(element('span','vfs-small','Save '+savingText(p)+' a year'));
+        if(id===sub.planId&&same){if(sub.cancelAtPeriodEnd){label='Keep '+tierName(id);kind='resume';}else if(sub.pendingPlanId){label='Keep '+tierName(id);kind='undo';}else label='Your plan';}
         else if(id==='free'){if(sub.cancelAtPeriodEnd)label='From '+until;else{label='Cancel plan';kind='free';}}
-        else if(id===sub.pendingPlanId)label='Starts '+until;
-        else if(rank(id)>rank(sub.planId)){label='Upgrade now';kind='up';}
+        else if(pending)label='Starts '+until;
+        else if(id===sub.planId){if(interval==='year'){label='Switch to annual now';kind='up';}else{label='Switch to monthly at renewal';kind='down';}}
+        else if(rank(id)>rank(sub.planId)&&!(current==='year'&&interval==='month')){label='Upgrade now';kind='up';}
         else{label='Switch at renewal';kind='down';}
         var button=element('button','vfs-button'+(kind==='up'?'':' vfs-secondary'),label);button.type='button';
-        if(kind)button.addEventListener('click',function(){confirmChange(id,kind,sub,grid);});else button.disabled=true;
+        if(kind)button.addEventListener('click',function(){confirmChange(id,kind,sub,box,interval);});else button.disabled=true;
         card.append(button);grid.append(card);
       });
-      return grid;
+      return box;
     }
-    function confirmChange(id,kind,sub,anchor){
+    function confirmChange(id,kind,sub,anchor,interval){
+      interval=interval||sub.interval||'month';var annualSwitch=id===sub.planId&&interval!==(sub.interval||'month');
       var previous=document.getElementById('vf-change-form');if(previous)previous.remove();
       var form=element('form','vfs-form vfs-subscribe'),name=tierName(id),until=sub.currentPeriodEnd?day(sub.currentPeriodEnd):'the end of your billing period',needTerms=kind==='up'||kind==='down';form.id='vf-change-form';
-      form.append(element('p','',{up:'Upgrade to '+name+' now. Today you pay the prorated difference for the rest of this billing period; after that, '+((plan(id)||{}).price||'').replace('/mo',' a month')+' plus tax where it applies.',down:'Switch to '+name+' on '+until+'. You keep '+tierName(sub.planId)+' until then, and nothing is charged today.',free:'Cancel your plan. It stays active until '+until+', then your account continues as Free, with no service plan. No refund for the current period.',resume:'Keep '+name+'. It will renew as usual on '+until+'.',undo:'Keep '+name+' and cancel the scheduled change.'}[kind]));
+      form.append(element('p','',{up:annualSwitch?'Switch '+name+' to annual billing now: '+priceText(plan(id),'year')+', two months free. The unused part of this month is credited against the first year, and the year is charged today. We remind you 30 days before it renews.':'Upgrade to '+name+(interval==='year'?' annual':'')+' now. Today you pay the prorated difference for the rest of this billing period; after that, '+priceText(plan(id),interval)+' plus tax where it applies.',down:annualSwitch?'Switch '+name+' to monthly billing on '+until+', when your annual term ends: '+priceText(plan(id),'month')+'. Nothing changes or is charged today.':'Switch to '+name+(interval!==(sub.interval||'month')?(interval==='year'?' annual':' monthly'):'')+' on '+until+', at '+priceText(plan(id),interval)+'. You keep '+tierName(sub.planId)+' until then, and nothing is charged today.',free:'Cancel your plan. It stays active until '+until+', then your account continues as Free, with no service plan. No refund for the current period.',resume:'Keep '+name+'. It will renew as usual on '+until+'.',undo:'Keep '+name+' and cancel the scheduled change.'}[kind]));
       if(needTerms){var label=element('label','vfs-check'),box=element('input');box.type='checkbox';box.required=true;label.append(box,document.createTextNode(' I have read and agree to the '));var link=element('a','','Terms of Service');link.href='terms.html';link.target='_blank';label.append(link,document.createTextNode(' (version '+(catalog.termsVersion||'1.0')+'), including section 5 for '+name+'.'));form.append(label);}
       var why=null;
       if(kind==='free'){
         var cheapest=catalog.plans[0];
-        if(cheapest&&cheapest.id!==sub.planId){var offer=element('p','vfs-small'),swap=element('button','vfs-link','Switch to '+cheapest.name+' at renewal instead ('+String(cheapest.price||'').replace('/mo',' a month')+')');swap.type='button';swap.addEventListener('click',function(){confirmChange(cheapest.id,'down',sub,anchor);});offer.append(document.createTextNode('Prefer to keep going for less? '),swap);form.append(offer);}
+        if(cheapest&&cheapest.id!==sub.planId){var offer=element('p','vfs-small'),swap=element('button','vfs-link','Switch to '+cheapest.name+' at renewal instead ('+priceText(cheapest,sub.interval)+')');swap.type='button';swap.addEventListener('click',function(){confirmChange(cheapest.id,'down',sub,anchor,sub.interval);});offer.append(document.createTextNode('Prefer to keep going for less? '),swap);form.append(offer);}
         var whyLabel=element('label','','Why are you cancelling? (optional)');why=element('select');why.id='vf-cancel-why';whyLabel.htmlFor='vf-cancel-why';
         ['','Too expensive','Not using it enough','The work is finished','Moving to another provider','Something else'].forEach(function(text){var option=element('option','',text||'Choose a reason');option.value=text;why.append(option);});
         form.append(whyLabel,why);
       }
-      var go=element('button','vfs-button',{up:'Upgrade and pay the difference',down:'Schedule the switch',free:'Cancel plan',resume:'Keep my plan',undo:'Keep my plan'}[kind]);go.type='submit';
+      var go=element('button','vfs-button',{up:annualSwitch?'Switch to annual and pay for the year':'Upgrade and pay the difference',down:'Schedule the switch',free:'Cancel plan',resume:'Keep my plan',undo:'Keep my plan'}[kind]);go.type='submit';
       var back=element('button','vfs-button vfs-secondary','Never mind');back.type='button';back.addEventListener('click',function(){form.remove();});
       var note=element('p','vfs-small vfs-form-note');note.setAttribute('role','alert');
       form.append(note,go,back);
       form.addEventListener('submit',async function(event){event.preventDefault();if(!form.reportValidity())return;go.disabled=true;note.textContent='';accountStatus.textContent='Updating your plan…';
-        try{await call('billing/change-plan',{planId:kind==='resume'||kind==='undo'?sub.planId:id,acceptTerms:needTerms,reason:why?why.value:undefined},state.csrf);
-          accountStatus.textContent={up:'You’re on '+name+' now.',down:'Switch to '+name+' scheduled for '+until+'.',free:'Plan cancelled. It stays active until '+until+'.',resume:'Your plan will renew as usual.',undo:'Scheduled change cancelled.'}[kind];await refreshAccount();}
+        try{await call('billing/change-plan',{planId:kind==='resume'||kind==='undo'?sub.planId:id,interval:kind==='free'?undefined:kind==='resume'||kind==='undo'?(sub.interval||'month'):interval,acceptTerms:needTerms,reason:why?why.value:undefined},state.csrf);
+          accountStatus.textContent={up:annualSwitch?'You’re on '+name+' annual now.':'You’re on '+name+' now.',down:'Switch to '+name+' scheduled for '+until+'.',free:'Plan cancelled. It stays active until '+until+'.',resume:'Your plan will renew as usual.',undo:'Scheduled change cancelled.'}[kind];await refreshAccount();}
         catch(error){accountStatus.textContent=error.message;note.textContent=error.message;go.disabled=false;}});
       anchor.after(form);box?box.focus():go.focus();
     }
@@ -294,9 +323,9 @@
       if(sub){
         var states={active:'Active',trialing:'Active',past_due:'Payment failed',unpaid:'Payment failed',incomplete:'Waiting for payment'};
         var line=element('p','vfs-plan-line');line.append(element('strong','',sub.planName+' plan'),document.createTextNode(' · '+(states[sub.status]||sub.status)));billingBody.append(line);
-        if(sub.currentPeriodEnd)billingBody.append(element('p','vfs-small',sub.cancelAtPeriodEnd?'Cancelled: active until '+day(sub.currentPeriodEnd)+', then it stops. No further charges.':'Renews on '+day(sub.currentPeriodEnd)+'.'));
+        if(sub.currentPeriodEnd)billingBody.append(element('p','vfs-small',sub.cancelAtPeriodEnd?'Cancelled: active until '+day(sub.currentPeriodEnd)+', then it stops. No further charges.':'Renews on '+day(sub.currentPeriodEnd)+(sub.interval==='year'?' · billed yearly, '+priceText(plan(sub.planId),'year'):' · billed monthly')+'.'));
         if(sub.status==='past_due'||sub.status==='unpaid')billingBody.append(element('p','vfs-status','Your last payment didn’t go through. Update your payment method below to keep the plan.'));
-        if(sub.pendingPlanName&&sub.currentPeriodEnd)billingBody.append(element('p','vfs-small','Switching to '+sub.pendingPlanName+' on '+day(sub.currentPeriodEnd)+'.'));
+        if(sub.pendingPlanName&&sub.currentPeriodEnd)billingBody.append(element('p','vfs-small','Switching to '+sub.pendingPlanName+(sub.pendingInterval&&sub.pendingInterval!==sub.interval?(sub.pendingInterval==='year'?' annual':' monthly'):'')+' on '+day(sub.currentPeriodEnd)+'.'));
         if(sub.status==='active'||sub.status==='trialing')billingBody.append(planPicker(sub));
       }
       if(wantedPlan&&!(sub&&monthly(wantedPlan))){billingBody.append(subscribeForm(wantedPlan));}

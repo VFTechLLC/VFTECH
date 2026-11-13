@@ -115,3 +115,7 @@
 .vfs-history{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:6px}
 .vfs-history li{display:flex;gap:10px;flex-wrap:wrap}
 .vfs-history .vfs-small{min-width:96px}
+
+/* Monthly / annual toggle (Accounts spec, phase 4). */
+.vfs-interval{margin:0 0 26px;flex-wrap:wrap}
+.vfs-billing .vfs-interval{margin:12px 0 0}

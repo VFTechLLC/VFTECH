@@ -39,7 +39,7 @@ export function accounts({ HTTPError, json, now, catalog, field }) {
   /** The customer's plan as the pages need it: tier drives badges, themes and features. Free = no live plan. */
   async function planFor(env, customerId) {
     const row = await env.DB.prepare(
-      "SELECT plan_id AS planId,status,current_period_end AS periodEnd,cancel_at_period_end AS cancelling,pending_plan_id AS pendingPlanId,past_due_since AS pastDueSince,disputed,no_payment_method AS noPaymentMethod,card_last4 AS cardLast4,card_expires AS cardExpires FROM subscriptions WHERE customer_id=? AND status IN ('active','trialing','past_due','unpaid','incomplete') ORDER BY updated_at DESC LIMIT 1",
+      "SELECT plan_id AS planId,status,current_period_end AS periodEnd,cancel_at_period_end AS cancelling,pending_plan_id AS pendingPlanId,billing_interval AS interval,pending_interval AS pendingInterval,past_due_since AS pastDueSince,disputed,no_payment_method AS noPaymentMethod,card_last4 AS cardLast4,card_expires AS cardExpires FROM subscriptions WHERE customer_id=? AND status IN ('active','trialing','past_due','unpaid','incomplete') ORDER BY updated_at DESC LIMIT 1",
     ).bind(customerId).first();
     if (!row || !plans.has(row.planId)) return { tier: 'free', name: 'Free', status: 'none', standing: 'ok' };
     const standing = standingOf(row, now());
@@ -54,6 +54,8 @@ export function accounts({ HTTPError, json, now, catalog, field }) {
       cancelAtPeriodEnd: Boolean(row.cancelling),
       pendingPlanId: row.pendingPlanId || null,
       pendingPlanName: row.pendingPlanId ? name(row.pendingPlanId) : null,
+      interval: row.interval === 'year' ? 'year' : 'month',
+      pendingInterval: row.pendingPlanId ? (row.pendingInterval || row.interval || 'month') : null,
       ...standing,
       card: cardOf(row, now()),
     };
@@ -101,13 +103,13 @@ export function accounts({ HTTPError, json, now, catalog, field }) {
   }
 
   /** Plan history and Terms acceptances: the audit trail the spec asks for. */
-  async function recordEvent(env, customerId, type, fromPlan, toPlan, reason = '') {
-    await env.DB.prepare('INSERT INTO plan_events (id,customer_id,type,from_plan,to_plan,reason,created_at) VALUES (?,?,?,?,?,?,?)').bind(crypto.randomUUID(), customerId, type, fromPlan || '', toPlan || '', reason || '', now()).run();
+  async function recordEvent(env, customerId, type, fromPlan, toPlan, reason = '', fromInterval = '', toInterval = '') {
+    await env.DB.prepare('INSERT INTO plan_events (id,customer_id,type,from_plan,to_plan,reason,from_interval,to_interval,created_at) VALUES (?,?,?,?,?,?,?,?,?)').bind(crypto.randomUUID(), customerId, type, fromPlan || '', toPlan || '', reason || '', fromInterval || '', toInterval || '', now()).run();
   }
   /** GET /api/account/history: the customer's plan history, newest first (spec phase 3). */
   async function history(env, active) {
-    const events = (await env.DB.prepare('SELECT type,from_plan AS fromPlan,to_plan AS toPlan,reason,created_at AS at FROM plan_events WHERE customer_id=? ORDER BY created_at DESC,rowid DESC LIMIT 100').bind(active.customer.id).all()).results || [];
-    return json({ events: events.map((e) => ({ ...e, fromName: e.fromPlan ? name(e.fromPlan) : '', toName: e.toPlan ? name(e.toPlan) : '' })) });
+    const events = (await env.DB.prepare('SELECT type,from_plan AS fromPlan,to_plan AS toPlan,from_interval AS fromInterval,to_interval AS toInterval,reason,created_at AS at FROM plan_events WHERE customer_id=? ORDER BY created_at DESC,rowid DESC LIMIT 100').bind(active.customer.id).all()).results || [];
+    return json({ events: events.map((e) => ({ ...e, fromName: e.fromPlan ? name(e.fromPlan) + (e.fromInterval === 'year' ? ' (annual)' : '') : '', toName: e.toPlan ? name(e.toPlan) + (e.toInterval === 'year' ? ' (annual)' : '') : '' })) });
   }
   async function recordTerms(env, customerId, itemId, ipHash) {
     await env.DB.prepare('INSERT INTO terms_acceptances (id,customer_id,item_id,version,ip_hash,accepted_at) VALUES (?,?,?,?,?,?)').bind(crypto.randomUUID(), customerId, itemId, String(catalog.termsVersion || '1.0'), ipHash || '', now()).run();

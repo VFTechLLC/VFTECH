@@ -14,8 +14,8 @@ Last updated: 13 Nov 2026.
 | 1 | Free tier, plan badges and themes, profile editing, features hub, Manage subscription (upgrade / downgrade / cancel / undo), per-plan Terms acceptance | **Live** (PR #9, deployed 13 Nov), minus pricing-card states (1b) |
 | 1b | Home/features pricing cards: "Your plan" / "Upgrade" states; header initials + plan chip + profile menu | **Live** (PR #11, deployed 13 Nov) |
 | 2 | Payment rules and suspension; Can't sign in? page | 2a payment rules **live** (PR #12, 13 Nov); 2b Can't sign in? **live** (PR #13, 13 Nov) |
-| 3 | Close account, data export, plan history view, honest cancellation, welcome and renewal emails | 3a close account + data export **live** (PR #14, 13 Nov); 3b history, cancellation and emails **in review** (`feature/accounts-3b`) |
-| 4 | Annual pricing, invoices, Google Pay, optional two-factor, hours meter, admin view | Not started |
+| 3 | Close account, data export, plan history view, honest cancellation, welcome and renewal emails | 3a close account + data export **live** (PR #14, 13 Nov); 3b history, cancellation and emails **live** (PR #15, 13 Nov) |
+| 4 | Annual pricing, invoices, Google Pay, optional two-factor, hours meter, admin view | 4a annual plans **in review** (`feature/accounts-4a`) |
 | 5 | Go live: live Stripe keys | Not started |
 
 ## Your next steps (in order)
@@ -64,7 +64,7 @@ Last updated: 13 Nov 2026.
 
 ## Phase 3: closing, export, history, emails
 
-**3b status (13 Nov): in review** (`feature/accounts-3b`): Plan history (`GET /api/account/history`, a "Plan history" panel on the account page; Checkout now records a `subscribed` event); cancelling offers Essentials at renewal first and asks one optional why from a short list, kept in `plan_events.reason` (migration `0007_plan_reasons.sql`); a welcome email per plan from `checkout.session.completed` (Priority's links to `contact.html?plan=priority` for the kickoff call until there is a booking link); a confirmation email for every plan change. The annual renewal reminder waits for annual plans (phase 4). Tests in `tests/history-emails.test.mjs`.
+**3b status (13 Nov): live** (PR #15): Plan history (`GET /api/account/history`, a "Plan history" panel on the account page; Checkout now records a `subscribed` event); cancelling offers Essentials at renewal first and asks one optional why from a short list, kept in `plan_events.reason` (migration `0007_plan_reasons.sql`); a welcome email per plan from `checkout.session.completed` (Priority's links to `contact.html?plan=priority` for the kickoff call until there is a booking link); a confirmation email for every plan change. The annual renewal reminder came with annual plans in 4a. Tests in `tests/history-emails.test.mjs`.
 
 **3a status (13 Nov): live** (PR #14): `backend/closing.js` (code to the account email, typed email, end of period / 14 days / now, Keep my account, daily deletion, JSON export), migration `0006_closing.sql`, the "Your data and account" box and the "closes on" banner in `site/services.js`, tests in `tests/closing.test.mjs`. Close now is offered on Free too (closes at once).
 
@@ -75,6 +75,8 @@ Last updated: 13 Nov 2026.
 - **Emails (Resend):** a welcome email per plan from the Checkout-completed webhook (Priority's includes a kickoff-call link); plan-change confirmations; an annual renewal reminder 30 days ahead (daily cron). Stripe sends receipts, retry emails and expiring-card emails, so never duplicate them.
 
 ## Phase 4: annual, invoices, wallets, two-factor, hours, admin
+
+**4a status (13 Nov): in review** (`feature/accounts-4a`): annual prices `vftech_<plan>_yearly` at ten times monthly, created in the test sandbox by `scripts/stripe-sync.mjs` (run it with `--live` at phase 5); a Monthly / Annual toggle on the features page cards with the saving in dollars; annual in the subscribe form and the plan picker. Monthly → annual is immediate with the unused month credited; annual → monthly, and any move from annual to a monthly plan, waits for the end of the annual term; a higher annual plan is immediate. Migration `0008_annual.sql` (`billing_interval`, `pending_interval`, `renewal_reminded`; intervals on `plan_events`); the renewal reminder 30 days ahead runs in the daily cron. Tests in `tests/annual.test.mjs`. Next: 4b (Google Pay, net-30 invoices, Priority flagging), 4c (two-factor), 4d (hours meter and admin view).
 
 - **Annual plans** at 10 times the monthly price (two months free): a second Stripe price per plan (`vftech_<plan>_yearly`), a monthly/annual toggle on the pricing cards showing the saving in dollars, monthly → annual immediately with credit, annual → monthly at the term end.
 - **Payment methods:** cards (Visa, Mastercard, **Amex and Discover allowed**: same fee), ACH, **Google Pay** (dashboard switch; it shows in hosted Checkout automatically). **No Apple Pay until Sign in with Apple exists. No PayPal** (Stripe doesn't process it for US businesses). Net-30 invoices for Priority and annual customers on request (Stripe Invoicing). Update the `payment_method_types` comment in `billing.js` to match.

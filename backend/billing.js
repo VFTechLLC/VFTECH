@@ -1,20 +1,25 @@
 // Subscriptions and billing through Stripe (spec v0.2, approved 2026-10-31): hosted Checkout to subscribe, the
 // hosted Customer Portal to change card, see invoices or cancel, and this Worker's D1 for who has which plan.
-// Plain fetch, no SDK. Prices are never typed here: each monthly plan in catalog.json is a Stripe price with the
-// lookup key vftech_<plan id>_monthly, created by scripts/stripe-sync.mjs. No secret key = billing switched off.
+// Plain fetch, no SDK. Prices are never typed here: each plan in catalog.json is a monthly Stripe price with the
+// lookup key vftech_<plan id>_monthly and an annual one (ten times the monthly price, spec phase 4) with
+// vftech_<plan id>_yearly, both created by scripts/stripe-sync.mjs. No secret key = billing switched off.
 
 const STRIPE_API = 'https://api.stripe.com/v1/';
 const LIVE_STATUSES = new Set(['active', 'trialing', 'past_due', 'unpaid', 'incomplete']);
 const SIGNATURE_TOLERANCE = 300;
 
-export const lookupKey = (planId) => `vftech_${planId}_monthly`;
+export const lookupKey = (planId, interval = 'month') => `vftech_${planId}_${interval === 'year' ? 'yearly' : 'monthly'}`;
+/** Annual plans cost ten times the monthly price: two months free (spec phase 4). */
+export const ANNUAL_MONTHS = 10;
 /** One-time purchases: catalog builds with a fixed published price ("$3,500 Fixed"). Ranges and quotes aren't sold online. */
 export const oneTimeKey = (itemId) => `vftech_${itemId}_once`;
 export function fixedPriceCents(price) {
   const match = /^\$([\d,]+(?:\.\d{2})?) Fixed$/.exec(price || '');
   return match ? Math.round(Number(match[1].replace(/,/g, '')) * 100) : null;
 }
-const planFromLookupKey = (key) => /^vftech_([a-z0-9-]+)_monthly$/.exec(key || '')?.[1] ?? null;
+const planFromLookupKey = (key) => /^vftech_([a-z0-9-]+)_(?:monthly|yearly)$/.exec(key || '')?.[1] ?? null;
+const intervalOf = (price) => (price?.recurring?.interval === 'year' || /_yearly$/.test(price?.lookup_key || '') ? 'year' : 'month');
+const intervalInput = (value) => (value === 'year' || value === 'month' ? value : null);
 
 /** Stripe's form encoding: nested objects as a[b]=c, arrays as a[0][b]=c. */
 export function formEncode(params, prefix = '', out = new URLSearchParams()) {
@@ -95,16 +100,16 @@ export function billing({ HTTPError, json, now, origin, catalog, audit, mail }) 
     const item = subscription.items?.data?.[0];
     const planId = planFromLookupKey(item?.price?.lookup_key) || subscription.metadata?.plan_id || 'unknown';
     await env.DB.prepare(
-      'INSERT INTO subscriptions (id,customer_id,plan_id,status,current_period_end,cancel_at_period_end,updated_at) VALUES (?,?,?,?,?,?,?) ' +
-        'ON CONFLICT(id) DO UPDATE SET plan_id=excluded.plan_id,status=excluded.status,current_period_end=excluded.current_period_end,cancel_at_period_end=excluded.cancel_at_period_end,updated_at=excluded.updated_at',
-    ).bind(subscription.id, owner.id, planId, subscription.status, subscription.current_period_end ?? item?.current_period_end ?? null, subscription.cancel_at_period_end ? 1 : 0, now()).run();
+      'INSERT INTO subscriptions (id,customer_id,plan_id,billing_interval,status,current_period_end,cancel_at_period_end,updated_at) VALUES (?,?,?,?,?,?,?,?) ' +
+        'ON CONFLICT(id) DO UPDATE SET plan_id=excluded.plan_id,billing_interval=excluded.billing_interval,status=excluded.status,current_period_end=excluded.current_period_end,cancel_at_period_end=excluded.cancel_at_period_end,updated_at=excluded.updated_at',
+    ).bind(subscription.id, owner.id, planId, intervalOf(item?.price), subscription.status, subscription.current_period_end ?? item?.current_period_end ?? null, subscription.cancel_at_period_end ? 1 : 0, now()).run();
     // A scheduled downgrade is pending only while Stripe still holds the schedule and it hasn't taken effect yet.
-    await env.DB.prepare('UPDATE subscriptions SET pending_plan_id=NULL,schedule_id=NULL WHERE id=? AND (? IS NULL OR pending_plan_id=plan_id)').bind(subscription.id, subscription.schedule || null).run();
+    await env.DB.prepare('UPDATE subscriptions SET pending_plan_id=NULL,pending_interval=NULL,schedule_id=NULL WHERE id=? AND (? IS NULL OR (pending_plan_id=plan_id AND COALESCE(pending_interval,billing_interval)=billing_interval))').bind(subscription.id, subscription.schedule || null).run();
     return true;
   }
 
   const currentSubscription = (env, customerId) =>
-    env.DB.prepare(`SELECT id,plan_id AS planId,status,current_period_end AS currentPeriodEnd,cancel_at_period_end AS cancelAtPeriodEnd,pending_plan_id AS pendingPlanId FROM subscriptions WHERE customer_id=? AND status IN (${[...LIVE_STATUSES].map(() => '?').join(',')}) ORDER BY updated_at DESC LIMIT 1`)
+    env.DB.prepare(`SELECT id,plan_id AS planId,status,current_period_end AS currentPeriodEnd,cancel_at_period_end AS cancelAtPeriodEnd,pending_plan_id AS pendingPlanId,billing_interval AS interval,pending_interval AS pendingInterval FROM subscriptions WHERE customer_id=? AND status IN (${[...LIVE_STATUSES].map(() => '?').join(',')}) ORDER BY updated_at DESC LIMIT 1`)
       .bind(customerId, ...LIVE_STATUSES)
       .first();
 
@@ -131,12 +136,12 @@ export function billing({ HTTPError, json, now, origin, catalog, audit, mail }) 
       }));
     }
     const subscription = await currentSubscription(env, active.customer.id);
-    return json({ enabled: true, subscription: subscription ? { ...subscription, cancelAtPeriodEnd: Boolean(subscription.cancelAtPeriodEnd), planName: plans.get(subscription.planId)?.name ?? subscription.planId, pendingPlanName: subscription.pendingPlanId ? plans.get(subscription.pendingPlanId)?.name ?? null : null } : null, invoices });
+    return json({ enabled: true, subscription: subscription ? { ...subscription, cancelAtPeriodEnd: Boolean(subscription.cancelAtPeriodEnd), planName: plans.get(subscription.planId)?.name ?? subscription.planId, interval: subscription.interval === 'year' ? 'year' : 'month', pendingInterval: subscription.pendingPlanId ? subscription.pendingInterval || subscription.interval || 'month' : null, pendingPlanName: subscription.pendingPlanId ? plans.get(subscription.pendingPlanId)?.name ?? null : null } : null, invoices });
   }
 
-  /** POST /api/billing/checkout {planId, acceptTerms}: a Stripe Checkout page for one monthly plan. */
   /**
-   * POST /api/billing/checkout {itemId, acceptTerms}: a Stripe Checkout page. A monthly plan becomes a subscription;
+   * POST /api/billing/checkout {itemId, interval, acceptTerms}: a Stripe Checkout page. A plan becomes a subscription
+   * (interval 'month', the default, or 'year' at ten times the monthly price);
    * a fixed-price build (e.g. "$3,500 Fixed") is a one-time payment with an invoice, so it shows in billing history.
    * Ranged or quoted work can't be bought here: VF Tech sends a Stripe invoice once the price is agreed.
    */
@@ -148,7 +153,8 @@ export function billing({ HTTPError, json, now, origin, catalog, audit, mail }) 
     if (input.acceptTerms !== true) throw new HTTPError(400, 'Please accept the Terms of Service to continue.');
     if (plan && (await currentSubscription(env, active.customer.id))) throw new HTTPError(409, 'You already have a plan. Use Manage billing to change or cancel it.');
     const chosen = plan || item;
-    const prices = await stripe(env, 'GET', 'prices', { lookup_keys: [plan ? lookupKey(plan.id) : oneTimeKey(item.id)], active: 'true', limit: 1 });
+    const interval = intervalInput(input.interval) || 'month';
+    const prices = await stripe(env, 'GET', 'prices', { lookup_keys: [plan ? lookupKey(plan.id, interval) : oneTimeKey(item.id)], active: 'true', limit: 1 });
     const price = prices.data?.[0];
     if (!price) throw new HTTPError(503, `${chosen.name} isn't available for online payment yet. Contact us to start it.`);
     const customer = await stripeCustomer(env, active.customer);
@@ -168,7 +174,7 @@ export function billing({ HTTPError, json, now, origin, catalog, audit, mail }) 
       customer_update: { address: 'auto', name: 'auto' },
       automatic_tax: { enabled: env.STRIPE_TAX === 'on' ? 'true' : 'false' },
       ...(plan
-        ? { subscription_data: { metadata: { ...metadata, plan_id: plan.id } } }
+        ? { subscription_data: { metadata: { ...metadata, plan_id: plan.id, interval } } }
         : { invoice_creation: { enabled: 'true', invoice_data: { description: `VF Tech ${item.name}`, metadata } }, payment_intent_data: { metadata } }),
       allow_promotion_codes: 'false',
     });
@@ -216,6 +222,7 @@ export function billing({ HTTPError, json, now, origin, catalog, audit, mail }) 
     if (target !== 'free' && !plans.has(target)) throw new HTTPError(400, 'Choose one of the published plans.');
     const current = await currentSubscription(env, active.customer.id);
     if (!current) throw new HTTPError(409, target === 'free' ? 'You are already on Free.' : 'You don’t have a plan yet. Choose one to subscribe.');
+    const fromInterval = current.interval === 'year' ? 'year' : 'month', interval = target === 'free' ? '' : intervalInput(input.interval) || fromInterval;
     if (!['active', 'trialing'].includes(current.status)) throw new HTTPError(409, 'Settle your last payment in Manage billing before changing plans.');
     const rank = (id) => (id === 'free' ? 0 : catalog.plans.findIndex((plan) => plan.id === id) + 1);
     const sub = await stripe(env, 'GET', `subscriptions/${current.id}`);
@@ -223,13 +230,17 @@ export function billing({ HTTPError, json, now, origin, catalog, audit, mail }) 
     if (!item) throw new HTTPError(502, 'Billing is temporarily unavailable. Please try again.');
     const release = async () => { if (sub.schedule) await stripe(env, 'POST', `subscription_schedules/${sub.schedule}/release`, {}); };
     const priceFor = async (planId) => {
-      const price = (await stripe(env, 'GET', 'prices', { lookup_keys: [lookupKey(planId)], active: 'true', limit: 1 })).data?.[0];
+      const price = (await stripe(env, 'GET', 'prices', { lookup_keys: [lookupKey(planId, interval)], active: 'true', limit: 1 })).data?.[0];
       if (!price) throw new HTTPError(503, `${plans.get(planId).name} isn’t available for online payment yet. Contact us to switch.`);
       return price;
     };
     const needTerms = () => { if (input.acceptTerms !== true) throw new HTTPError(400, 'Please accept the Terms of Service for the new plan to continue.'); };
     let event;
-    if (target === current.planId) {
+    // Spec phase 4: monthly → annual takes effect now, with the unused month credited; annual → monthly waits for
+    // the end of the annual term. A higher plan is immediate unless it also leaves an annual term early.
+    const sameInterval = interval === fromInterval;
+    const immediate = target !== 'free' && (rank(target) > rank(current.planId) || (target === current.planId && interval === 'year')) && !(fromInterval === 'year' && interval === 'month');
+    if (target === current.planId && sameInterval) {
       if (sub.cancel_at_period_end) { await stripe(env, 'POST', `subscriptions/${sub.id}`, { cancel_at_period_end: 'false' }); event = 'resumed'; }
       else if (sub.schedule) { await release(); event = 'change_undone'; }
       else throw new HTTPError(409, `You’re already on ${plans.get(target).name}.`);
@@ -237,7 +248,7 @@ export function billing({ HTTPError, json, now, origin, catalog, audit, mail }) 
       await release();
       await stripe(env, 'POST', `subscriptions/${sub.id}`, { cancel_at_period_end: 'true' });
       event = 'cancel_scheduled';
-    } else if (rank(target) > rank(current.planId)) {
+    } else if (immediate) {
       needTerms();
       const price = await priceFor(target);
       await release();
@@ -246,9 +257,9 @@ export function billing({ HTTPError, json, now, origin, catalog, audit, mail }) 
         proration_behavior: 'always_invoice',
         payment_behavior: 'error_if_incomplete',
         cancel_at_period_end: 'false',
-        metadata: { plan_id: target, terms_version: String(catalog.termsVersion || '1.0'), terms_accepted_at: String(now()) },
-      }, `upgrade-${sub.id}-${target}-${now()}`);
-      event = 'upgraded';
+        metadata: { plan_id: target, interval, terms_version: String(catalog.termsVersion || '1.0'), terms_accepted_at: String(now()) },
+      }, `upgrade-${sub.id}-${target}-${interval}-${now()}`);
+      event = target === current.planId ? 'switched_annual' : 'upgraded';
     } else {
       needTerms();
       const price = await priceFor(target);
@@ -261,20 +272,20 @@ export function billing({ HTTPError, json, now, origin, catalog, audit, mail }) 
         proration_behavior: 'none',
         phases: [
           { items: [{ price: item.price.id, quantity: 1 }], start_date: phase.start_date, end_date: phase.end_date },
-          { items: [{ price: price.id, quantity: 1 }], iterations: 1, metadata: { plan_id: target, terms_version: String(catalog.termsVersion || '1.0') } },
+          { items: [{ price: price.id, quantity: 1 }], iterations: 1, metadata: { plan_id: target, interval, terms_version: String(catalog.termsVersion || '1.0') } },
         ],
       });
-      await env.DB.prepare('UPDATE subscriptions SET pending_plan_id=?,schedule_id=? WHERE id=?').bind(target, schedule.id, sub.id).run();
-      event = 'downgrade_scheduled';
+      await env.DB.prepare('UPDATE subscriptions SET pending_plan_id=?,pending_interval=?,schedule_id=? WHERE id=?').bind(target, interval, schedule.id, sub.id).run();
+      event = rank(target) < rank(current.planId) ? 'downgrade_scheduled' : 'switch_scheduled';
     }
-    if (target !== 'free' && target !== current.planId) await audit?.recordTerms(env, active.customer.id, target, ipHash);
+    if (target !== 'free' && !(target === current.planId && sameInterval)) await audit?.recordTerms(env, active.customer.id, target, ipHash);
     // Cancelling asks one optional "why" (spec: honest cancellation); it is kept with the event.
     const reason = event === 'cancel_scheduled' && typeof input.reason === 'string' ? input.reason.replace(/[\r\n<>]+/g, ' ').trim().slice(0, 300) : '';
-    await audit?.recordEvent(env, active.customer.id, event, current.planId, target, reason);
+    await audit?.recordEvent(env, active.customer.id, event, current.planId, target, reason, fromInterval, interval || '');
     const fresh = await stripe(env, 'GET', `subscriptions/${sub.id}`);
     await saveSubscription(env, fresh);
-    await confirmChange(env, active.customer, event, current.planId, target, fresh.current_period_end ?? fresh.items?.data?.[0]?.current_period_end);
-    if (event === 'downgrade_scheduled') await env.DB.prepare('UPDATE subscriptions SET pending_plan_id=?,schedule_id=? WHERE id=?').bind(target, fresh.schedule || null, sub.id).run();
+    await confirmChange(env, active.customer, event, current.planId, target, fresh.current_period_end ?? fresh.items?.data?.[0]?.current_period_end, interval || fromInterval);
+    if (event === 'downgrade_scheduled' || event === 'switch_scheduled') await env.DB.prepare('UPDATE subscriptions SET pending_plan_id=?,pending_interval=?,schedule_id=? WHERE id=?').bind(target, interval, fresh.schedule || null, sub.id).run();
     return json({ changed: event });
   }
 
@@ -282,6 +293,9 @@ export function billing({ HTTPError, json, now, origin, catalog, audit, mail }) 
   // ---- Emails (spec phase 3): a welcome per plan, and a confirmation for every plan change. Stripe sends receipts,
   // retry and expiring-card emails, so none of those are duplicated here. A failed email never undoes a change. ----
   const monthlyPrice = (id) => String(plans.get(id)?.price || '').replace('/mo', ' a month');
+  const yearlyPrice = (id) => { const cents = monthlyCents(id); return cents ? `$${(cents * ANNUAL_MONTHS / 100).toLocaleString('en-US')} a year` : ''; };
+  const monthlyCents = (id) => { const m = /^\$([\d,]+)/.exec(plans.get(id)?.price || ''); return m ? Number(m[1].replace(/,/g, '')) * 100 : 0; };
+  const priceText = (id, interval) => (interval === 'year' ? yearlyPrice(id) : monthlyPrice(id));
   const featureDetail = (featureId, planId) => { const f = (catalog.features || []).find((x) => x.id === featureId); return typeof f?.detail === 'object' ? f.detail[planId] || '' : f?.detail || ''; };
   const sendSafely = async (env, payload, key) => { if (!mail) return; try { await mail(env, payload, key); } catch (error) { console.error('email', key, error?.message); } };
   const shortDay = (seconds) => (seconds ? new Date(seconds * 1000).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' }) : 'the end of this billing period');
@@ -306,11 +320,13 @@ export function billing({ HTTPError, json, now, origin, catalog, audit, mail }) 
     await sendSafely(env, { to: [owner.email], subject: `Welcome to VFTech ${plan.name}`, text: lines.join('\n') }, `welcome-${session.id}`);
   }
 
-  async function confirmChange(env, customer, event, fromId, toId, periodEnd) {
+  async function confirmChange(env, customer, event, fromId, toId, periodEnd, interval = 'month') {
     const from = plans.get(fromId)?.name ?? fromId, to = toId === 'free' ? 'Free' : plans.get(toId)?.name ?? toId, when = shortDay(periodEnd);
     const message = {
-      upgraded: [`You're on ${to} now`, `Your plan changed from ${from} to ${to} today. The difference for the rest of this billing period was charged now, and your receipt comes separately. From ${when} it's ${monthlyPrice(toId)}, plus tax where it applies.`],
-      downgrade_scheduled: [`Your switch to ${to} is scheduled`, `You keep ${from} until ${when}, then your plan switches to ${to} at ${monthlyPrice(toId)}. Nothing is charged today. Changed your mind? Keep ${from} from your account page.`],
+      upgraded: [`You're on ${to} now`, `Your plan changed from ${from} to ${to} today. The difference for the rest of this billing period was charged now, and your receipt comes separately. From ${when} it's ${priceText(toId, interval)}, plus tax where it applies.`],
+      switched_annual: [`You're on ${to} annual now`, `Your ${to} plan is billed yearly from today at ${yearlyPrice(toId)}, two months free compared with monthly. The unused part of this month was credited against the first year, and your receipt comes separately. You'll get a reminder 30 days before it renews.`],
+      switch_scheduled: [`Your switch to ${to} ${interval === 'year' ? 'annual' : 'monthly'} is scheduled`, `You keep your annual ${from} plan until ${when}, then it continues as ${to} at ${priceText(toId, interval)}. Nothing is charged today. Changed your mind? Keep your plan from your account page.`],
+      downgrade_scheduled: [`Your switch to ${to} is scheduled`, `You keep ${from} until ${when}, then your plan switches to ${to} at ${priceText(toId, interval)}. Nothing is charged today. Changed your mind? Keep ${from} from your account page.`],
       cancel_scheduled: [`Your ${from} plan is cancelled`, `Your plan stays active until ${when}, then your account continues as Free, with no service plan. There are no further charges. Changed your mind? Keep your plan from your account page.`],
       resumed: [`Your ${from} plan will renew`, `Your cancellation is undone. Your plan renews as usual on ${when}.`],
       change_undone: [`You're staying on ${from}`, `Your scheduled switch is cancelled. You stay on ${from}, and it renews as usual on ${when}.`],
@@ -402,5 +418,27 @@ export function billing({ HTTPError, json, now, origin, catalog, audit, mail }) 
     return { checked: rows.length, sent, closed };
   }
 
-  return { enabled, live, enabledFor, status, checkout, portal, webhook, changePlan, dunning, refreshCard, stripe };
+  /**
+   * Daily job (cron): one email per annual term, 30 days before it renews, with the date and the price. Monthly plans
+   * and plans set to end get none; Stripe's own receipt follows when it renews.
+   */
+  async function renewalReminders(env) {
+    if (!enabled(env)) return { sent: 0 };
+    const rows = (await env.DB.prepare("SELECT s.id,s.plan_id AS planId,s.current_period_end AS periodEnd,s.pending_plan_id AS pendingPlanId,s.pending_interval AS pendingInterval,c.email,c.name FROM subscriptions s JOIN customers c ON c.id=s.customer_id WHERE s.billing_interval='year' AND s.status IN ('active','trialing') AND s.cancel_at_period_end=0 AND s.current_period_end BETWEEN ? AND ? AND COALESCE(s.renewal_reminded,0)<>s.current_period_end").bind(now(), now() + 30 * DAY).all()).results || [];
+    let sent = 0;
+    for (const row of rows) {
+      const nextId = row.pendingPlanId || row.planId, nextInterval = row.pendingPlanId ? row.pendingInterval || 'year' : 'year';
+      const next = plans.get(nextId)?.name ?? nextId, plan = plans.get(row.planId)?.name ?? row.planId;
+      const change = row.pendingPlanId ? `As you asked, it continues as ${next} ${nextInterval === 'year' ? 'annual' : 'monthly'} at ${priceText(nextId, nextInterval)}.` : `It renews for another year at ${yearlyPrice(row.planId)}, plus tax where it applies.`;
+      const text = `Hi ${row.name || 'there'},\n\nA reminder that your ${plan} annual plan renews on ${shortDay(row.periodEnd)}. ${change}\n\nNothing to do if that's what you want. To switch plans, move to monthly billing or cancel, use your account page before that date: ${origin(env)}/account.html\n\nVF Tech\nkevinvf@vftech.io`;
+      try {
+        await mail(env, { to: [row.email], subject: `Your ${plan} plan renews on ${shortDay(row.periodEnd)}`, text }, `renewal-${row.id}-${row.periodEnd}`);
+        await env.DB.prepare('UPDATE subscriptions SET renewal_reminded=? WHERE id=?').bind(row.periodEnd, row.id).run();
+        sent++;
+      } catch (error) { console.error('renewal reminder', row.id, error?.message); }
+    }
+    return { sent };
+  }
+
+  return { enabled, live, enabledFor, status, checkout, portal, webhook, changePlan, dunning, renewalReminders, refreshCard, stripe };
 }
