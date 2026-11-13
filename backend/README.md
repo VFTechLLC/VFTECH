@@ -129,3 +129,16 @@ Before deploying:
 3. Each plan needs its `vftech_<plan>_monthly` price (already created by `scripts/stripe-sync.mjs`); upgrades and downgrades look prices up the same way Checkout does.
 
 To give a customer a portal button: `UPDATE customers SET portal_url='https://…' WHERE email='…'` in the D1 console (admin view comes in phase 4).
+
+## Account recovery ("Can't sign in?")
+
+Requests from customers who lost access to their email land in `recovery_requests` and are emailed to `CONTACT_TO`.
+Until the admin view (phase 4), handle them in the D1 console:
+
+1. Check at least one detail: the invoice number or the card's last four digits in Stripe (search the old email), or
+   the phone on the profile (`SELECT name,phone FROM customers WHERE email='<old>'`). If nothing matches, reply and stop.
+2. Change the email and end every session:
+   `UPDATE customers SET email='<new>' WHERE email='<old>';`
+   `DELETE FROM sessions WHERE customer_id=(SELECT id FROM customers WHERE email='<new>');`
+   Then update the email on the Stripe customer too.
+3. Log it: `UPDATE recovery_requests SET status='done',handled_by='<your email>',handled_at=unixepoch() WHERE id='<id>';`

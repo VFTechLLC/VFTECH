@@ -43,10 +43,25 @@ async function contact(request,env,input){
 async function requestCode(request,env,input){
   requireReady(env,'accountsEnabled');if(input.website)throw new HTTPError(400,'The request could not be verified.');const address=email(input.email),name=field(input.name,'your name',80);
   await limit(env,'code-ip',request.headers.get('CF-Connecting-IP')||'unknown',10,3600);await limit(env,'code-email',address,3,900);await captcha(request,env,input,'account');
+  // existingOnly (Can't sign in? page): send a code only to an existing account, and answer exactly as if one was sent,
+  // so the page never reveals which emails have accounts.
+  if(input.existingOnly===true&&!(await env.DB.prepare('SELECT 1 AS found FROM customers WHERE email=?').bind(address).first()))return json({challengeId:crypto.randomUUID(),expiresIn:CODE_SECONDS},201);
   const id=crypto.randomUUID(),value=code(),timestamp=now(),hash=await hmac(env,`code:${id}:${address}:${value}`);
   await env.DB.prepare('INSERT INTO auth_challenges (id,email,name,code_hash,expires_at,created_at) VALUES (?,?,?,?,?,?)').bind(id,address,name,hash,timestamp+CODE_SECONDS,timestamp).run();
   try{await send(env,{to:[address],subject:'Your VFTech verification code',text:`Your VFTech verification code is ${value}.\n\nIt expires in ten minutes and can be used once. If you did not request it, ignore this email. Never share your code.`},`code-${id}`);}catch(error){await env.DB.prepare('DELETE FROM auth_challenges WHERE id=?').bind(id).run();throw error;}
   return json({challengeId:id,expiresIn:CODE_SECONDS},201);
+}
+async function recovery(request,env,input){
+  requireReady(env,'accountsEnabled');if(input.website)throw new HTTPError(400,'The request could not be verified.');
+  const data={oldEmail:email(input.oldEmail),newEmail:email(input.newEmail),name:field(input.name,'your name',80,true),invoice:field(input.invoice,'the invoice number',60),cardLast4:field(input.cardLast4,'the last four digits',4),phone:field(input.phone,'the phone number',40),message:field(input.message,'your message',2000)};
+  if(data.cardLast4&&!/^[0-9]{4}$/.test(data.cardLast4))throw new HTTPError(400,'Enter the last four digits of the card, or leave it empty.');
+  if(data.oldEmail===data.newEmail)throw new HTTPError(400,'Enter a different email address that you can use now.');
+  if(!data.invoice&&!data.cardLast4&&!data.phone)throw new HTTPError(400,'Give at least one detail we can check: an invoice number, the last four digits of your card, or your phone number.');
+  await limit(env,'recovery-ip',request.headers.get('CF-Connecting-IP')||'unknown',5,3600);await limit(env,'recovery-email',data.oldEmail,3,86400);await captcha(request,env,input,'account');
+  const id=crypto.randomUUID(),found=await env.DB.prepare('SELECT id FROM customers WHERE email=?').bind(data.oldEmail).first();
+  await env.DB.prepare('INSERT INTO recovery_requests (id,old_email,new_email,name,invoice,card_last4,phone,message,account_found,ip_hash,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)').bind(id,data.oldEmail,data.newEmail,data.name,data.invoice,data.cardLast4,data.phone,data.message,found?1:0,await hmac(env,'ip:'+(request.headers.get('CF-Connecting-IP')||'unknown')),now()).run();
+  await send(env,{to:env.CONTACT_TO.split(',').map(s=>s.trim()).filter(Boolean),subject:`Account recovery request: ${data.oldEmail}`,text:[`Request: ${id}`,`Account on file for the old email: ${found?'yes':'NO, nothing to recover'}`,`Name: ${data.name}`,`Old email (lost access): ${data.oldEmail}`,`New email: ${data.newEmail}`,`Invoice number: ${data.invoice||'—'}`,`Card last four: ${data.cardLast4||'—'}`,`Phone: ${data.phone||'—'}`,'',data.message||'(no message)','','Verify at least one detail against Stripe and the profile before changing anything. Steps: backend/README.md, "Account recovery".'].join('\n')},`recovery-${id}`);
+  return json({received:true},201);
 }
 async function verifyCode(request,env,input){
   requireReady(env,'accountsEnabled');const id=uuid(input.challengeId,'the verification request'),address=email(input.email),value=field(input.code,'the verification code',6,true);if(!/^\d{6}$/.test(value))throw new HTTPError(400,'Enter the six-digit code.');
@@ -101,7 +116,7 @@ export default {
       if(request.method==='GET'&&url.pathname==='/api/billing')return await bills.status(env,await signedIn(request,env,false));
       if(request.method==='GET'&&url.pathname==='/api/account/profile')return await acct.getProfile(env,await signedIn(request,env,false));
       if(request.method==='GET'&&url.pathname==='/api/account/features')return await acct.features(env,await signedIn(request,env,false));
-      if(request.method==='POST'){sameOrigin(request,env);const billingRoute=url.pathname==='/api/billing/checkout'?'checkout':url.pathname==='/api/billing/portal'?'portal':url.pathname==='/api/billing/change-plan'?'change':null;const input=await body(request);if(url.pathname==='/api/contact')return await contact(request,env,input);if(url.pathname==='/api/auth/request-code')return await requestCode(request,env,input);if(url.pathname==='/api/auth/verify-code')return await verifyCode(request,env,input);
+      if(request.method==='POST'){sameOrigin(request,env);const billingRoute=url.pathname==='/api/billing/checkout'?'checkout':url.pathname==='/api/billing/portal'?'portal':url.pathname==='/api/billing/change-plan'?'change':null;const input=await body(request);if(url.pathname==='/api/contact')return await contact(request,env,input);if(url.pathname==='/api/auth/request-code')return await requestCode(request,env,input);if(url.pathname==='/api/auth/verify-code')return await verifyCode(request,env,input);if(url.pathname==='/api/auth/recovery')return await recovery(request,env,input);
         if(billingRoute){const active=await signedIn(request,env,true);await limit(env,'billing',active.customer.id,20,3600);return billingRoute==='checkout'?await bills.checkout(env,active,input,await ipHash(request,env)):billingRoute==='change'?await bills.changePlan(env,active,input,await ipHash(request,env)):await bills.portal(env,active);}
         if(url.pathname==='/api/account/profile'){const active=await signedIn(request,env,true);await limit(env,'profile',active.customer.id,30,3600);return await acct.saveProfile(env,active,input);}
         if(url.pathname==='/api/auth/logout'){const active=await session(request,env);if(!active)throw new HTTPError(401,'Sign in to continue.');if(!equal(request.headers.get('X-CSRF-Token'),active.csrfToken))throw new HTTPError(403,'Refresh your account page and try again.');await env.DB.prepare('DELETE FROM sessions WHERE token_hash=?').bind(await digest(active.token)).run();return json({authenticated:false},200,{'Set-Cookie':`${COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`});}}

@@ -273,4 +273,24 @@
     var baseShowAccount=showAccount;showAccount=async function(result){await baseShowAccount(result);loadBilling();};
     call('session').then(function(result){if(result.authenticated)showAccount(result);}).catch(function(){accountStatus.textContent='The account service could not be reached. Please try again later.';signSubmit.disabled=true;});
   }
+  // "Can't sign in?" page (Accounts spec, phase 2): a code only for existing accounts (same answer either way), and a
+  // recovery request for customers who lost access to their email.
+  var helpForm=document.getElementById('vf-help-form');
+  if(helpForm){
+    var helpStatus=document.getElementById('vf-help-status'),helpCode=document.getElementById('vf-help-code'),recoverForm=document.getElementById('vf-recover-form'),recoverStatus=document.getElementById('vf-recover-status');
+    if(api&&settings.accountsEnabled&&settings.turnstileSiteKey){
+      helpStatus.textContent='';helpStatus.hidden=true;
+      var helpSubmit=helpForm.querySelector('button[type=submit]'),helpCaptcha=verification(document.getElementById('vf-help-captcha'),'account',helpSubmit,helpStatus),helpHoney=trap(helpForm),help={};
+      helpForm.addEventListener('submit',async function(event){event.preventDefault();if(!helpForm.reportValidity())return;helpSubmit.disabled=true;help.email=String(new FormData(helpForm).get('email')).trim().toLowerCase();helpStatus.hidden=false;helpStatus.textContent='Sending…';
+        try{var result=await call('auth/request-code',{email:help.email,existingOnly:true,website:helpHoney.value,turnstileToken:helpCaptcha.get()});help.challengeId=result.challengeId;helpForm.hidden=true;helpCode.hidden=false;helpStatus.textContent='If there’s an account for '+help.email+', a code is on its way. Check your email.';document.getElementById('vf-help-code-input').focus();}
+        catch(error){helpStatus.textContent=error.message;}finally{helpCaptcha.reset();}});
+      helpCode.addEventListener('submit',async function(event){event.preventDefault();if(!helpCode.reportValidity())return;var button=helpCode.querySelector('button[type=submit]');button.disabled=true;helpStatus.textContent='Checking the code…';
+        try{await call('auth/verify-code',{email:help.email,challengeId:help.challengeId,code:document.getElementById('vf-help-code-input').value});helpStatus.textContent='You’re signed in. Opening your account…';location.href='account.html';}
+        catch(error){helpStatus.textContent=error.message;button.disabled=false;}});
+      var recoverSubmit=recoverForm.querySelector('button[type=submit]'),recoverCaptcha=verification(document.getElementById('vf-recover-captcha'),'account',recoverSubmit,recoverStatus),recoverHoney=trap(recoverForm);
+      recoverForm.addEventListener('submit',async function(event){event.preventDefault();if(!recoverForm.reportValidity())return;var fd=new FormData(recoverForm);recoverSubmit.disabled=true;recoverStatus.hidden=false;recoverStatus.textContent='Sending your request…';
+        try{await call('auth/recovery',{name:fd.get('name'),oldEmail:fd.get('oldEmail'),newEmail:fd.get('newEmail'),invoice:fd.get('invoice'),cardLast4:fd.get('cardLast4'),phone:fd.get('phone'),message:fd.get('message'),website:recoverHoney.value,turnstileToken:recoverCaptcha.get()});recoverForm.hidden=true;recoverStatus.textContent='Thanks. We’ll check the details against our records and reply to your new email address.';}
+        catch(error){recoverStatus.textContent=error.message;}finally{recoverCaptcha.reset();}});
+    }
+  }
 })();

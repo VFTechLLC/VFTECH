@@ -13,7 +13,7 @@ Last updated: 13 Nov 2026.
 | 0 | Terms of Service v1.0 page, versioned checkout checkbox, `terms_version` in Stripe metadata | **Live** on vftech.io (`55d849e`, deployed 13 Nov) |
 | 1 | Free tier, plan badges and themes, profile editing, features hub, Manage subscription (upgrade / downgrade / cancel / undo), per-plan Terms acceptance | **Live** (PR #9, deployed 13 Nov), minus pricing-card states (1b) |
 | 1b | Home/features pricing cards: "Your plan" / "Upgrade" states; header initials + plan chip + profile menu | **Live** (PR #11, deployed 13 Nov) |
-| 2 | Payment rules and suspension; Can't sign in? page | **In review:** 2a payment rules (`feature/accounts-2a`); 2b Can't sign in? not started |
+| 2 | Payment rules and suspension; Can't sign in? page | 2a payment rules **live** (PR #12, 13 Nov); 2b Can't sign in? **in review** (`feature/accounts-2b`) |
 | 3 | Close account, data export, plan history view, honest cancellation, welcome and renewal emails | Not started |
 | 4 | Annual pricing, invoices, Google Pay, optional two-factor, hours meter, admin view | Not started |
 | 5 | Go live: live Stripe keys | Not started |
@@ -43,7 +43,9 @@ Last updated: 13 Nov 2026.
 
 ## Phase 2: payment rules and suspension; Can't sign in?
 
-**2a status (13 Nov):** built in `feature/accounts-2a`: migration `0004_payment_rules.sql`, timeline in `backend/account.js` (`standingOf`, `cardOf`), webhooks and the daily job in `backend/billing.js` (`paymentEvent`, `refreshCard`, `dunning`), banner and payment screen in `site/services.js`, tests in `tests/payment-rules.test.mjs`. Still to do by hand: add `invoice.payment_failed`, `invoice.paid`, `charge.dispute.created`, `charge.dispute.closed`, `payment_method.attached`, `payment_method.detached`, `payment_method.updated` and `customer.updated` to the Stripe webhook; set Smart Retries (three weeks, then mark the subscription unpaid) and expiring-card emails in the Stripe dashboard, in test and again in live. Day 90 ends the plan and writes the balance off; deleting the account data comes with the closing steps in phase 3.
+**2b status (13 Nov): in review** (`feature/accounts-2b`): `signin-help.html` (generated), `existingOnly` on `/api/auth/request-code`, `/api/auth/recovery` with migration `0005_recovery.sql`, staff steps in `backend/README.md`, tests in `tests/recovery.test.mjs`. Item (3), a lost two-factor device, waits for two-factor itself (phase 4).
+
+**2a status (13 Nov): live** (PR #12): migration `0004_payment_rules.sql`, timeline in `backend/account.js` (`standingOf`, `cardOf`), webhooks and the daily job in `backend/billing.js` (`paymentEvent`, `refreshCard`, `dunning`), banner and payment screen in `site/services.js`, tests in `tests/payment-rules.test.mjs`. Done in test mode on 13 Nov: the eight events are on the Stripe webhook; Smart Retries (8 tries within three weeks, then mark the subscription unpaid); Stripe emails for failed card and bank payments and expiring cards, linking to Stripe-hosted pages. **Repeat all of it in live** at phase 5. Day 90 ends the plan and writes the balance off; deleting the account data comes with the closing steps in phase 3.
 
 - **Stripe settings:** Smart Retries over three weeks, then mark the subscription **unpaid** (not cancelled), so paying the open invoice restores everything. Turn on expiring-card emails.
 - **Timeline from the failed payment** (track `past_due_since` from the `invoice.payment_failed` webhook):
