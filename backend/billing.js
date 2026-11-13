@@ -150,7 +150,7 @@ export function billing({ HTTPError, json, now, origin, catalog }) {
     if (!price) throw new HTTPError(503, `${chosen.name} isn't available for online payment yet. Contact us to start it.`);
     const customer = await stripeCustomer(env, active.customer);
     const base = origin(env);
-    const metadata = { vftech_customer_id: active.customer.id, item_id: chosen.id, terms_accepted_at: String(now()) };
+    const metadata = { vftech_customer_id: active.customer.id, item_id: chosen.id, terms_accepted_at: String(now()), terms_version: String(catalog.termsVersion || '1.0') };
     const session = await stripe(env, 'POST', 'checkout/sessions', {
       mode: plan ? 'subscription' : 'payment',
       customer,

@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "termsVersion": "1.0",
   "builds": [
     {
       "id": "launch",
