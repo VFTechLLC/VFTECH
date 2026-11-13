@@ -162,3 +162,25 @@ in step 1 above, then turn two-factor off and end every sign-in, and log it as i
     DELETE FROM sessions WHERE customer_id=(SELECT id FROM customers WHERE email='<email>');
 
 Staff always use two-factor: the admin view (phase 4d) sits behind Cloudflare Access with two-factor required.
+
+## Admin view and hours meter (phase 4d)
+
+The staff page is **https://vftech.io/api/admin** (`backend/admin.js`): customers by plan and standing, hours logging,
+suspend and reactivate, portal links, two-factor reset, sign out everywhere, email change for recovery, open recovery
+requests and the staff log. Every change is logged in `admin_log` with the staff email.
+
+It needs **Cloudflare Access** in front of it, and the Worker checks Access's signed token as well (fails closed):
+
+1. Cloudflare dashboard → Zero Trust (free for up to 50 users). Note the team domain, e.g. `vftech.cloudflareaccess.com`.
+2. Settings → Authentication: add **Google** as a login method (staff sign in with their vftech.io Google accounts,
+   where 2-Step Verification is required in Google Workspace admin), so staff always use two-factor.
+3. Access → Applications → Add → Self-hosted: domain `vftech.io`, path `api/admin`. Policy "Staff": Allow, emails
+   in the list below. Copy the **Application Audience (AUD) tag**.
+4. Set the Worker: `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` as secrets (`npx wrangler secret put ACCESS_TEAM_DOMAIN`,
+   `npx wrangler secret put ACCESS_AUD`). `ADMIN_EMAILS` is in `wrangler.jsonc`; keep it the same as the Access policy.
+
+Until all three are set, every `/api/admin` route answers 503.
+
+**Hours meter:** each plan's monthly hours (from the catalog: Essentials 1, Standard 3, Priority 8) are totalled for
+the current month of the billing period (anchored on the renewal day; annual plans too). The account page shows the
+meter; at 80% the customer gets one email per month saying extra work is $250/hour and quoted first.

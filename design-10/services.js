@@ -51,6 +51,7 @@
   var LOCKED={payment_required:true,suspended:true};
   function paymentNotice(p){
     if(!p||p.tier==='free'&&!p.standing)return null;
+    if(p.reason==='staff')return {text:'Your account is on hold. Contact us and we’ll sort it out.',action:'Contact us',href:'contact.html'};
     if(p.standing==='past_due')return {text:'Your last payment didn’t go through. Update your payment method so your plan keeps running.',action:'Fix payment',portal:true};
     if(p.standing==='payment_required'&&p.reason==='dispute')return {text:'A payment on your account is disputed, so your plan is paused until it’s resolved.',action:'Contact us',href:'contact.html'};
     if(p.standing==='payment_required'&&p.reason==='no_payment_method')return {text:'Your plan needs a payment method. Add one to keep your plan running.',action:'Add payment method',portal:true};
@@ -217,20 +218,20 @@
       var p=state.plan||{},locked=!!LOCKED[p.standing],old=document.getElementById('vf-paywall');if(old)old.remove();
       home.classList.toggle('vfs-account-locked',locked);if(!locked)return;
       var wall=element('section','vfs-paywall');wall.id='vf-paywall';wall.setAttribute('aria-labelledby','vf-paywall-title');
-      var title=p.standing==='suspended'?'Your plan is suspended':p.reason==='dispute'?'A payment is disputed':p.reason==='no_payment_method'?'Add a payment method':'Payment needed';
+      var title=p.reason==='staff'?'Your account is on hold':p.standing==='suspended'?'Your plan is suspended':p.reason==='dispute'?'A payment is disputed':p.reason==='no_payment_method'?'Add a payment method':'Payment needed';
       var h=element('h3','',title);h.id='vf-paywall-title';wall.append(h);
-      var text=p.reason==='dispute'?'A charge on your account is being disputed with your bank, so work on your plan is paused until it’s resolved. Contact us and we’ll sort it out together.'
+      var text=p.reason==='staff'?'Your account is on hold, so your plan’s features are off for now. Contact us and we’ll sort it out together.':p.reason==='dispute'?'A charge on your account is being disputed with your bank, so work on your plan is paused until it’s resolved. Contact us and we’ll sort it out together.'
         :p.reason==='no_payment_method'?'Your '+(p.name||'')+' plan needs a payment method on file. Add a card or bank account to keep it running.'
         :p.standing==='suspended'?'Your '+(p.name||'')+' plan is suspended because of an unpaid balance, so its features are off. Paying everything owed restores it straight away.'+(p.closesOn?' If it’s still unpaid on '+shortDate(p.closesOn)+', the plan closes.':'')
         :'We couldn’t collect payment for your '+(p.name||'')+' plan, so work on it is paused until what’s owed is paid.'+(p.suspendsOn?' If it’s still unpaid on '+shortDate(p.suspendsOn)+', the plan is suspended.':'');
       wall.append(element('p','',text));
       var actions=element('div','vfs-paywall-actions');
-      if(p.reason!=='dispute'&&p.reason!=='no_payment_method'){var pay=element('a','vfs-button','Pay what’s owed');pay.hidden=true;actions.append(pay);
+      if(p.reason!=='dispute'&&p.reason!=='no_payment_method'&&p.reason!=='staff'){var pay=element('a','vfs-button','Pay what’s owed');pay.hidden=true;actions.append(pay);
         call('billing').then(function(d){var open=(d.invoices||[]).filter(function(i){return i.status==='open'&&i.url;});if(open.length){pay.href=open[0].url;pay.target='_blank';pay.rel='noopener';var owed=open.reduce(function(sum,i){return sum+(i.total||0);},0);pay.textContent='Pay what’s owed ($'+(owed/100).toLocaleString('en-US',{minimumFractionDigits:2})+')';pay.hidden=false;}}).catch(function(){});}
       var method=element('button','vfs-button'+(p.reason==='no_payment_method'?'':' vfs-secondary'),p.reason==='no_payment_method'?'Add payment method':'Update payment method');method.type='button';method.addEventListener('click',function(){openPortal(state.csrf,method);});
-      if(p.reason!=='dispute')actions.append(method);
+      if(p.reason!=='dispute'&&p.reason!=='staff')actions.append(method);
       var talk=element('a','vfs-button vfs-secondary','Contact us');talk.href='contact.html';actions.append(talk);
-      wall.append(actions,element('p','vfs-small','Until then, only billing, contact and sign out are available.'));
+      wall.append(actions,element('p','vfs-small',p.reason==='staff'?'Until then, only contact, billing and sign out are available.':'Until then, only billing, contact and sign out are available.'));
       document.getElementById('vf-tier-card').after(wall);
     }
     // Your data and account (Accounts spec, phase 3): download everything as JSON, or close the account.
@@ -312,15 +313,30 @@
       try{var events=(await call('account/history')).events||[];body.textContent='';
         if(!events.length){body.append(element('p','vfs-small','No plan changes yet.'));return;}
         var list=element('ul','vfs-history');
-        events.forEach(function(e){var a=e.fromName,b=e.toName;var text={subscribed:'Started '+b,upgraded:'Upgraded from '+a+' to '+b,downgrade_scheduled:'Scheduled a switch from '+a+' to '+b,switch_scheduled:'Scheduled a switch from '+a+' to '+b,switched_annual:'Switched '+a+' to annual billing',net30_requested:'Asked to pay by invoice (net 30)',change_undone:'Kept '+a+' (scheduled switch cancelled)',cancel_scheduled:'Cancelled '+a+(e.reason?' ('+e.reason+')':''),resumed:'Kept '+a+' (cancellation undone)',closed_unpaid:a+' closed after 90 days unpaid',account_close_scheduled:'Asked to close the account',account_close_cancelled:'Kept the account'}[e.type]||e.type;
+        events.forEach(function(e){var a=e.fromName,b=e.toName;var text={subscribed:'Started '+b,upgraded:'Upgraded from '+a+' to '+b,downgrade_scheduled:'Scheduled a switch from '+a+' to '+b,switch_scheduled:'Scheduled a switch from '+a+' to '+b,switched_annual:'Switched '+a+' to annual billing',net30_requested:'Asked to pay by invoice (net 30)',suspended_by_staff:'Account put on hold',reactivated_by_staff:'Account hold lifted',change_undone:'Kept '+a+' (scheduled switch cancelled)',cancel_scheduled:'Cancelled '+a+(e.reason?' ('+e.reason+')':''),resumed:'Kept '+a+' (cancellation undone)',closed_unpaid:a+' closed after 90 days unpaid',account_close_scheduled:'Asked to close the account',account_close_cancelled:'Kept the account'}[e.type]||e.type;
           var li=element('li');li.append(element('span','vfs-small',shortDate(e.at)),document.createTextNode(' '+text));list.append(li);});
         body.append(list);}
       catch(error){body.textContent=error.message;}
     });
+    // Hours meter (Accounts spec, phase 4): this month's plan hours, logged by our team, with a warning at 80%.
+    async function loadHours(body){
+      try{var h=await call('account/hours');if(!h.included)return;
+        var box=element('div','vfs-hours'+(h.over?' vfs-hours-over':h.warn?' vfs-hours-warn':''));box.id='vf-hours';
+        var pct=Math.min(100,Math.round(h.used/h.included*100)),bar=element('div','vfs-hours-bar'),fill=element('span');fill.style.width=pct+'%';bar.append(fill);
+        bar.setAttribute('role','meter');bar.setAttribute('aria-valuemin','0');bar.setAttribute('aria-valuemax',String(h.included));bar.setAttribute('aria-valuenow',String(Math.min(h.used,h.included)));bar.setAttribute('aria-label','Plan hours used this month');
+        var resets=shortDate(h.periodEnd);
+        box.append(element('strong','',h.used+' of '+h.included+' hour'+(h.included===1?'':'s')+' used this month'),bar,element('span','vfs-small','Resets '+resets+'.'));
+        if(h.over)box.append(element('p','vfs-small','You’ve used this month’s plan hours. Extra work is $'+h.extraRate+' an hour, and we quote it before we start.'));
+        else if(h.warn)box.append(element('p','vfs-small','You’ve used 80% of this month’s hours. Extra work beyond your plan is $'+h.extraRate+' an hour, quoted first.'));
+        if(h.entries.length){var more=element('details'),sum=element('summary','vfs-small','What we worked on');more.append(sum);var ul=element('ul','vfs-history');h.entries.forEach(function(e){var li=element('li');li.append(element('span','vfs-small',e.date),document.createTextNode(' '+e.hours+' h'+(e.note?' · '+e.note:'')));ul.append(li);});more.append(ul);box.append(more);}
+        var old=document.getElementById('vf-hours');if(old)old.remove();body.prepend(box);
+      }catch{}
+    }
     async function loadFeatures(){
       var body=document.getElementById('vf-features-body');if(!body)return;body.textContent='Loading…';
       try{
-        var d=await call('account/features');body.textContent='';if(d.paused){body.append(element('p','vfs-small','Paused until your payment is settled.'));return;}
+        var d=await call('account/features');body.textContent='';if(d.paused){body.append(element('p','vfs-small',state.plan&&state.plan.reason==='staff'?'Paused while your account is on hold.':'Paused until your payment is settled.'));return;}
+        if(d.tier&&d.tier!=='free')loadHours(body);
         var list=element('ul','vfs-feature-list');
         d.included.forEach(function(f){var li=element('li','vfs-feature'),text=element('div');text.append(element('strong','',f.label));if(f.detail)text.append(element('span','vfs-small',f.detail));li.append(text);
           if(f.href){var a=element('a','vfs-button vfs-secondary',f.id==='phone'?'Call':f.id==='email'?'Email':'Open');a.href=f.href;if(f.type==='portal'){a.target='_blank';a.rel='noopener';}li.append(a);}list.append(li);});

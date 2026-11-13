@@ -13,6 +13,7 @@ export function fixture(){
     state.outbound.push(String(url));
     if(String(url)==='https://challenges.cloudflare.com/turnstile/v0/siteverify'){const token=options.body.get('response'),action=token?.startsWith('contact-')?'contact':'account',valid=/^(contact|account)-/.test(token||'')&&!used.has(token)&&!state.failCaptcha;used.add(token);return Response.json({success:valid,hostname:state.hostname||env.TURNSTILE_HOSTNAME,action:state.action||action});}
     if(String(url)==='https://api.resend.com/emails'){if(state.failMail)return Response.json({error:'provider unavailable'},{status:500});state.emails.push({payload:JSON.parse(options.body),key:options.headers['Idempotency-Key']});return Response.json({id:crypto.randomUUID()});}
+    if(/^https:\/\/[a-z0-9-]+\.cloudflareaccess\.com\/cdn-cgi\/access\/certs$/.test(String(url))){state.certFetches=(state.certFetches||0)+1;return Response.json({keys:state.accessKeys||[]});}
     if(String(url).startsWith('https://api.stripe.com/v1/')){const u=new URL(url),path=u.pathname.slice(4),method=options.method||'GET',params=method==='POST'?new URLSearchParams(String(options.body)):u.searchParams,s=state.stripe;s.keys.push(options.headers['Idempotency-Key']||null);
       if(method==='POST'&&path==='customers'){const id='cus_'+(s.customers.length+1);s.customers.push({id,email:params.get('email')});return Response.json({id});}
       if(method==='GET'&&path==='prices'){const price=s.prices[params.get('lookup_keys[0]')];return Response.json({data:price?[price]:[]});}

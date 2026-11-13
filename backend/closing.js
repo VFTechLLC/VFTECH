@@ -105,6 +105,7 @@ export function closing({ HTTPError, json, now, hmac, code, equal, send, codeSec
     await env.DB.batch([
       env.DB.prepare('DELETE FROM sessions WHERE customer_id=?').bind(customerId),
       env.DB.prepare('DELETE FROM recovery_codes WHERE customer_id=?').bind(customerId),
+      env.DB.prepare('DELETE FROM time_entries WHERE customer_id=?').bind(customerId),
       env.DB.prepare('DELETE FROM auth_challenges WHERE email=?').bind(customer.email),
       env.DB.prepare('DELETE FROM contact_requests WHERE email=?').bind(customer.email),
       env.DB.prepare('DELETE FROM plan_events WHERE customer_id=?').bind(customerId),
@@ -135,6 +136,7 @@ export function closing({ HTTPError, json, now, hmac, code, equal, send, codeSec
       requests: await all('SELECT id,business,phone,topics,times,message,plan_id AS planId,status,created_at AS createdAt FROM contact_requests WHERE email=? ORDER BY created_at', profile.email),
       planHistory: await all('SELECT type,from_plan AS fromPlan,to_plan AS toPlan,created_at AS at FROM plan_events WHERE customer_id=? ORDER BY created_at', id),
       termsAccepted: await all('SELECT item_id AS item,version,accepted_at AS at FROM terms_acceptances WHERE customer_id=? ORDER BY accepted_at', id),
+      hoursLogged: await all('SELECT work_date AS date,minutes,note FROM time_entries WHERE customer_id=? ORDER BY work_date', id),
       invoices: [],
     };
     const stripeCustomer = (await env.DB.prepare('SELECT stripe_customer_id AS s FROM customers WHERE id=?').bind(id).first())?.s;
