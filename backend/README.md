@@ -184,3 +184,20 @@ Until all three are set, every `/api/admin` route answers 503.
 **Hours meter:** each plan's monthly hours (from the catalog: Essentials 1, Standard 3, Priority 8) are totalled for
 the current month of the billing period (anchored on the renewal day; annual plans too). The account page shows the
 meter; at 80% the customer gets one email per month saying extra work is $250/hour and quoted first.
+
+## Before going live (phase 5 prep)
+
+**Test clocks against the real Stripe sandbox:** `STRIPE_SECRET_KEY=sk_test_… node scripts/stripe-clock-check.mjs [scenario …]`.
+It runs this Worker (real SQLite, as in the tests) against sandbox subscriptions on Stripe test clocks, fast-forwards
+time, replays Stripe's own events into the webhook and moves the Worker's clock with Stripe's, so the daily job runs
+at the right moments. Scenarios: `renewal`, `dunning` (failed renewal → day 7 → unpaid after Smart Retries → day 30
+→ pay and restore), `close90`, `downgrade`, `annual` (monthly → annual with credit, renewal reminder, back to monthly
+at the term end) and `cancel`. Emails are captured, never sent; each scenario's clock is deleted at the end. Test keys
+only. Rerun it after any billing change and before switching to live keys.
+
+**Webhook failure alert:** the daily job asks Stripe for events it couldn't deliver to `/api/stripe/webhook` in the
+last day and, if there are any, emails `ALERT_TO` (comma-separated; falls back to `CONTACT_TO`), at most once a day.
+
+**Tax codes:** `scripts/stripe-sync.mjs` sets each product's Stripe Tax code: care plans `txcd_37071010` (custom
+software maintenance, updates and services), builds `txcd_10701200` (website design). A proposal until the
+accountant confirms; Stripe Tax stays off (`STRIPE_TAX` unset) until then.
