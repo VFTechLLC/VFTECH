@@ -126,7 +126,10 @@ export function billing({ HTTPError, json, now, origin, catalog, audit, mail }) 
     if (row?.stripe_customer_id) {
       // Refresh from Stripe so the page is right even if a webhook was missed.
       const subscriptions = await stripe(env, 'GET', 'subscriptions', { customer: row.stripe_customer_id, status: 'all', limit: 5 });
-      for (const subscription of subscriptions.data || []) await saveSubscription(env, subscription);
+      for (const subscription of subscriptions.data || []) {
+        await saveSubscription(env, subscription);
+        if (subscription.status === 'unpaid') await finalizeDrafts(env, subscription.id);
+      }
       const list = await stripe(env, 'GET', 'invoices', { customer: row.stripe_customer_id, limit: 12 });
       invoices = (list.data || []).filter((invoice) => invoice.status !== 'draft').map((invoice) => ({
         id: invoice.id,
@@ -403,6 +406,36 @@ export function billing({ HTTPError, json, now, origin, catalog, audit, mail }) 
   }
 
   /** Webhook events for the payment timeline. Stripe stays the source of truth: each one re-reads what it needs. */
+  // Found by the Stripe test clocks (phase 5 prep): once Smart Retries mark a subscription unpaid, Stripe creates the
+  // next renewal invoices as drafts it won't charge, so "pay what's owed" left the plan unpaid. Drafts are finalized
+  // (not charged) so they count as owed and show on the payment screen; when the customer pays one invoice, the rest
+  // are paid with the same payment method, oldest first, so the plan comes back at once (spec phase 2).
+  async function finalizeDrafts(env, subId) {
+    const drafts = ((await stripe(env, 'GET', 'invoices', { subscription: subId, status: 'draft', limit: 20 })).data || []);
+    for (const invoice of drafts) {
+      try { await stripe(env, 'POST', `invoices/${invoice.id}/finalize`, { auto_advance: 'false' }); }
+      catch (error) { console.error('finalize draft', invoice.id, error?.message); }
+    }
+    return drafts.length;
+  }
+  async function settleRest(env, subId, paidInvoice) {
+    const sub = await stripe(env, 'GET', `subscriptions/${subId}`);
+    if (!['unpaid', 'past_due'].includes(sub.status)) return;
+    const idOf = (value) => (typeof value === 'string' ? value : value?.id || null);
+    let method = null;
+    const intent = idOf(paidInvoice.payment_intent);
+    if (intent) method = idOf((await stripe(env, 'GET', `payment_intents/${intent}`)).payment_method);
+    if (!method) method = idOf(sub.default_payment_method);
+    if (!method && sub.customer) method = idOf((await stripe(env, 'GET', `customers/${idOf(sub.customer)}`)).invoice_settings?.default_payment_method);
+    if (!method) return;
+    await finalizeDrafts(env, subId);
+    const open = ((await stripe(env, 'GET', 'invoices', { subscription: subId, status: 'open', limit: 20 })).data || []).sort((x, y) => x.created - y.created);
+    for (const invoice of open) {
+      try { await stripe(env, 'POST', `invoices/${invoice.id}/pay`, { payment_method: method }, `settle-${invoice.id}`); }
+      catch (error) { console.error('settle invoice', invoice.id, error?.message); break; }
+    }
+  }
+
   async function paymentEvent(env, event) {
     const object = event.data?.object || {};
     if (event.type === 'invoice.payment_failed') {
@@ -411,6 +444,7 @@ export function billing({ HTTPError, json, now, origin, catalog, audit, mail }) 
     } else if (event.type === 'invoice.paid') {
       const subId = subIdOf(object);
       if (!subId) return;
+      await settleRest(env, subId, object);
       const open = (await stripe(env, 'GET', 'invoices', { subscription: subId, status: 'open', limit: 1 })).data || [];
       if (!open.length) await env.DB.prepare('UPDATE subscriptions SET past_due_since=NULL,dunning_stage=0 WHERE id=?').bind(subId).run();
     } else if (event.type === 'charge.dispute.created' || event.type === 'charge.dispute.closed') {
@@ -447,6 +481,7 @@ export function billing({ HTTPError, json, now, origin, catalog, audit, mail }) 
     const rows = (await env.DB.prepare('SELECT s.id,s.plan_id AS planId,s.past_due_since AS since,s.dunning_stage AS stage,c.id AS customerId,c.email,c.name FROM subscriptions s JOIN customers c ON c.id=s.customer_id WHERE s.past_due_since IS NOT NULL').all()).results || [];
     let sent = 0, closed = 0;
     for (const row of rows) {
+      try { await finalizeDrafts(env, row.id); } catch (error) { console.error('dunning drafts', row.id, error?.message); }
       const days = Math.floor((now() - row.since) / DAY);
       const step = TIMELINE.filter((d) => days >= d && d > row.stage).pop();
       if (!step) continue;
@@ -486,5 +521,35 @@ export function billing({ HTTPError, json, now, origin, catalog, audit, mail }) 
     return { sent };
   }
 
-  return { enabled, live, enabledFor, status, checkout, portal, webhook, changePlan, requestNet30, dunning, renewalReminders, refreshCard, stripe };
+  /**
+   * Daily job (cron), spec phase 5: if Stripe failed to deliver any event to our webhook in the last day, email the
+   * team (ALERT_TO, else CONTACT_TO). Stripe retries for three days, so a broken endpoint or a wrong signing secret
+   * shows up here the next morning instead of as plans quietly out of step. One email a day at most.
+   */
+  async function webhookHealth(env) {
+    if (!enabled(env)) return { failed: 0 };
+    const since = now() - 26 * 3600;
+    const list = await stripe(env, 'GET', 'events', { delivery_success: 'false', created: { gte: since }, limit: 100 });
+    const events = list.data || [];
+    if (!events.length) return { failed: 0 };
+    const to = String(env.ALERT_TO || env.CONTACT_TO || '').split(',').map((s) => s.trim()).filter(Boolean);
+    if (!to.length) return { failed: events.length };
+    const byType = {};
+    for (const event of events) byType[event.type] = (byType[event.type] || 0) + 1;
+    const when = (s) => new Date(s * 1000).toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
+    const times = events.map((e) => e.created).sort((x, y) => x - y);
+    const count = `${events.length}${list.has_more ? '+' : ''}`;
+    const text = [
+      `Stripe could not deliver ${count} event${events.length === 1 ? '' : 's'} to ${origin(env)}/api/stripe/webhook in the last day (${live(env) ? 'live' : 'test'} mode), between ${when(times[0])} and ${when(times.at(-1))}.`,
+      '',
+      ...Object.entries(byType).sort((x, y) => y[1] - x[1]).map(([type, n]) => `- ${type}: ${n}`),
+      '',
+      'Stripe keeps retrying for three days. Until delivery works, plan changes, payments and failed payments may not show on customers\' accounts.',
+      'Check: Stripe dashboard > Developers > Webhooks > the endpoint > failed deliveries (the response code says why); that STRIPE_WEBHOOK_SECRET on the Worker matches the endpoint\'s signing secret; the Worker\'s logs.',
+    ].join('\n');
+    await sendSafely(env, { to, subject: `Stripe webhooks failing: ${count} event${events.length === 1 ? '' : 's'} not delivered`, text }, `webhook-health-${new Date(now() * 1000).toISOString().slice(0, 10)}`);
+    return { failed: events.length };
+  }
+
+  return { enabled, live, enabledFor, status, checkout, portal, webhook, changePlan, requestNet30, dunning, renewalReminders, webhookHealth, refreshCard, stripe };
 }

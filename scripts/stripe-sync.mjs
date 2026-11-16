@@ -34,6 +34,11 @@ const cents = (price) => {
   return Math.round(Number(match[1].replace(/,/g, '')) * 100);
 };
 const say = (text) => console.log(`${apply ? '' : '[dry run] '}${text}`);
+// Stripe Tax product codes (phase 5 prep, proposal pending the accountant; Stripe Tax stays off until then):
+// care plans bundle hosting with updates, changes and support → custom software maintenance with updates and
+// services; fixed-price builds → website design. Washington has taxed website development and IT support since
+// 1 Oct 2025 (hosting and domains excluded), so both are treated as taxable there until the accountant confirms.
+const TAX_CODE = {plan: 'txcd_37071010', build: 'txcd_10701200'};
 
 const items = [...catalog.plans.flatMap((plan) => [{...plan, amount: cents(plan.price), lookup: lookupKey(plan.id), monthly: true, interval: 'month'}, {...plan, amount: cents(plan.price) * ANNUAL_MONTHS, lookup: lookupKey(plan.id, 'year'), monthly: true, interval: 'year'}]), ...catalog.builds.filter((build) => fixedPriceCents(build.price) !== null).map((build) => ({...build, amount: fixedPriceCents(build.price), lookup: oneTimeKey(build.id), monthly: false}))];
 console.log(`Stripe ${key.startsWith('sk_test_') ? 'TEST' : 'LIVE'} mode: ${items.filter((i) => i.monthly).length} plan prices (monthly and annual) and ${items.filter((i) => !i.monthly).length} one-time items from backend/catalog.json`);
@@ -43,11 +48,16 @@ for (const plan of items) {
   let product = products.find((item) => item.metadata?.vftech_plan_id === plan.id);
   if (!product) {
     say(`create product ${plan.name}`);
-    if (apply) product = await stripe('POST', 'products', {name: `VF Tech ${plan.name}`, description: plan.description.slice(0, 500), metadata: {vftech_plan_id: plan.id}, tax_code: 'txcd_10000000'});
+    if (apply) product = await stripe('POST', 'products', {name: `VF Tech ${plan.name}`, description: plan.description.slice(0, 500), metadata: {vftech_plan_id: plan.id}, tax_code: TAX_CODE[plan.monthly ? 'plan' : 'build']});
     if (product) products.push(product);
   } else if (product.name !== `VF Tech ${plan.name}`) {
     say(`rename product ${product.name} → VF Tech ${plan.name}`);
     if (apply) await stripe('POST', `products/${product.id}`, {name: `VF Tech ${plan.name}`});
+  }
+  const taxCode = TAX_CODE[plan.monthly ? 'plan' : 'build'];
+  if (product && product.tax_code !== taxCode && (typeof product.tax_code !== 'object' || product.tax_code?.id !== taxCode)) {
+    say(`tax code ${plan.name}: ${typeof product.tax_code === 'object' ? product.tax_code?.id : product.tax_code || 'none'} → ${taxCode}`);
+    if (apply) { await stripe('POST', `products/${product.id}`, {tax_code: taxCode}); product.tax_code = taxCode; }
   }
   const current = (await stripe('GET', 'prices', {lookup_keys: [lookup], active: 'true', limit: 1})).data[0];
   if (current && current.unit_amount === amount && (plan.monthly ? current.recurring?.interval === plan.interval : !current.recurring)) {

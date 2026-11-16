@@ -176,3 +176,34 @@ test('A paid plan must keep a payment method; the card on file is remembered', a
   assert.equal(p.card.last4, '0005');
   assert.equal(p.card.expiring, true, 'a card expiring within the month shows the banner');
 });
+
+// Found by the Stripe test clocks (phase 5 prep): after Smart Retries mark a subscription unpaid, Stripe leaves the
+// next renewal invoice as a draft it won't charge, so paying the open invoice alone left the plan unpaid.
+test('Unpaid across a renewal: the draft shows as owed, and paying settles the rest so the plan comes back', async (t) => {
+  const f = setup(t), login = await subscriber(f);
+  const sub = f.state.stripe.subscriptions[0];
+  sub.status = 'unpaid';
+  daysAgo(f, 35);
+  f.state.stripe.invoices.push(
+    {id: 'in_old', customer: 'cus_1', subscription: 'sub_1', status: 'open', total: 75000, created: now() - 35 * DAY},
+    {id: 'in_new', customer: 'cus_1', subscription: 'sub_1', status: 'draft', total: 75000, created: now() - 4 * DAY},
+  );
+  // Opening the account page makes the draft a payable, owed invoice (finalized, not charged).
+  const owed = (await f.request('billing', undefined, as(login, false))).body.invoices.filter((i) => i.status === 'open');
+  assert.deepEqual(owed.map((i) => i.id).sort(), ['in_new', 'in_old']);
+  assert.equal(f.state.stripe.paidWith, undefined, 'nothing charged just by looking');
+  // The customer pays the oldest from the payment screen; the rest is paid with the same card, the plan restored.
+  f.state.stripe.invoices[0].status = 'paid';
+  await hook(f, 'invoice.paid', {id: 'in_old', customer: 'cus_1', subscription: 'sub_1', payment_intent: 'pi_123'});
+  assert.deepEqual(f.state.stripe.paidWith, [['in_new', 'pm_paid_with']]);
+  assert.equal(f.state.stripe.invoices[1].status, 'paid');
+  assert.equal(f.sqlite.prepare("SELECT past_due_since FROM subscriptions WHERE id='sub_1'").get().past_due_since, null);
+});
+
+test('Paying an invoice on a healthy plan settles nothing else', async (t) => {
+  const f = setup(t);
+  await subscriber(f);
+  f.state.stripe.invoices.push({id: 'in_1', customer: 'cus_1', subscription: 'sub_1', status: 'paid', total: 75000, created: now()});
+  await hook(f, 'invoice.paid', {id: 'in_1', customer: 'cus_1', subscription: 'sub_1', payment_intent: 'pi_1'});
+  assert.equal(f.state.stripe.paidWith, undefined);
+});

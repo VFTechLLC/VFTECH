@@ -16,7 +16,7 @@ Last updated: 13 Nov 2026.
 | 2 | Payment rules and suspension; Can't sign in? page | 2a payment rules **live** (PR #12, 13 Nov); 2b Can't sign in? **live** (PR #13, 13 Nov) |
 | 3 | Close account, data export, plan history view, honest cancellation, welcome and renewal emails | 3a close account + data export **live** (PR #14, 13 Nov); 3b history, cancellation and emails **live** (PR #15, 13 Nov) |
 | 4 | Annual pricing, invoices, Google Pay, optional two-factor, hours meter, admin view | 4a annual plans **live** (PR #16, 13 Nov); 4b Google Pay, net-30 and Priority flag **live** (PR #17, 13 Nov); 4c two-factor **live** (PR #18, 13 Nov); 4d hours meter and admin view **in review** (`feature/accounts-4d`) |
-| 5 | Go live: live Stripe keys | Not started |
+| 5 | Go live: live Stripe keys | Prep **in review** (`feature/phase5-prep`): test clocks, webhook alert, tax codes, privacy draft; the switch waits on Stripe live activation |
 
 ## Your next steps (in order)
 
@@ -92,6 +92,14 @@ Last updated: 13 Nov 2026.
 - **Priority flagging:** `/api/contact` looks up the plan; Priority requests get a `[Priority]` subject prefix.
 
 ## Phase 5: go live
+
+**Prep status (16 Nov): in review** (`feature/phase5-prep`). Done in the sandbox, nothing live changes:
+- **Test clocks** (`scripts/stripe-clock-check.mjs`): the billing code against real Stripe subscriptions with time fast-forwarded and Stripe's own events replayed: renewal, the failed-payment timeline (past due → day 7 → unpaid after Smart Retries → day 30 → pay and restore), day 90 close, downgrade at renewal, monthly → annual with credit, the annual renewal reminder, annual → monthly at the term end, cancel. **It found one real bug, fixed here:** once a subscription is unpaid, Stripe creates the next renewal invoice as a draft it won't charge, so paying what the screen showed left the plan unpaid. Drafts are now finalized (not charged) so the screen shows the full amount owed, and paying one invoice settles the rest with the same card.
+- **Webhook failure alert:** the daily job emails `ALERT_TO` (else `CONTACT_TO`) when Stripe couldn't deliver events in the last day.
+- **Tax codes** set in the sandbox: care plans `txcd_37071010`, builds `txcd_10701200`; a proposal for the accountant, Stripe Tax still off.
+- **Privacy wording:** a draft for Kevin in `docs/PRIVACY-DRAFT.md` (publish as Terms v1.1 once approved).
+
+Still on the day of the switch: Stripe live activation (Kevin: ID and bank), `stripe-sync.mjs --live` (prices, payment methods, tax codes, portal), a live webhook endpoint with the same 12 events and its secret on the Worker, Smart Retries and the Stripe emails set in live as in test, then the live key on the Worker.
 
 Live Stripe keys (this lifts the `BILLING_TEST_EMAILS` gate). Before switching: Stripe **test clocks** for renewals, failures, day 7/30/90 and annual reminders; webhook-failure alerts to admin@; the Privacy policy names Stripe and the other processors; set Stripe Tax codes. Treat plans and builds as taxable for Washington customers until the accountant confirms; WA has taxed website development and support since 1 Oct 2025, with hosting and domains excluded.
 
