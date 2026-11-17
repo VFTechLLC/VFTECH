@@ -7,7 +7,7 @@ export function fixture(){
   function statement(sql,args=[]){return {bind(...values){return statement(sql,values);},async first(){return sqlite.prepare(sql).get(...args)||null;},async all(){return {results:sqlite.prepare(sql).all(...args)};},async run(){const result=sqlite.prepare(sql).run(...args);return {success:true,meta:{changes:Number(result.changes)}};},sql,args};}
   const DB={prepare:statement,async batch(items){sqlite.exec('BEGIN');try{const results=items.map(item=>{const result=sqlite.prepare(item.sql).run(...item.args);return {success:true,meta:{changes:Number(result.changes)}};});sqlite.exec('COMMIT');return results;}catch(error){sqlite.exec('ROLLBACK');throw error;}}};
   const env={DB,SITE_URL:'https://vftech.test',TURNSTILE_SITE_KEY:'test-site-key',TURNSTILE_SECRET_KEY:'test-secret',TURNSTILE_HOSTNAME:'vftech.test',RESEND_API_KEY:'test-mail-key',EMAIL_FROM:'VFTech <test@vftech.test>',CONTACT_TO:'inbox@vftech.test',SESSION_SECRET:'test-only-session-secret-at-least-thirty-two-characters'};
-  const state={emails:[],outbound:[],failMail:false,failCaptcha:false,hostname:null,action:null,stripe:{prices:{},customers:[],subscriptions:[],invoices:[],sessions:[],keys:[]}};
+  const state={get team(){return this.emails.filter(m=>m.payload.to.includes(env.CONTACT_TO))},emails:[],outbound:[],failMail:false,failCaptcha:false,hostname:null,action:null,stripe:{prices:{},customers:[],subscriptions:[],invoices:[],sessions:[],keys:[]}};
   const used=new Set(),original=globalThis.fetch;
   globalThis.fetch=async(url,options)=>{
     state.outbound.push(String(url));

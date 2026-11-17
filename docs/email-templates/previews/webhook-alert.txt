@@ -1,0 +1,14 @@
+Subject: Stripe webhooks failing: 3 events not delivered
+
+Stripe could not deliver 3 events to https://vftech.io/api/stripe/webhook in the last day (test mode), between 2026-11-16 09:12 UTC and 2026-11-16 21:40 UTC.
+
+- invoice.paid: 2
+- customer.updated: 1
+
+Stripe keeps retrying for three days. Until delivery works, plan changes, payments and failed payments may not show on customers' accounts.
+
+Check: Stripe dashboard > Developers > Webhooks > the endpoint > failed deliveries (the response code says why); that STRIPE_WEBHOOK_SECRET on the Worker matches the endpoint's signing secret; the Worker's logs.
+
+------------------------------------------------------------
+Sent Nov 17, 2026, 10:04 AM ET by vftech.io. Admin page: https://vftech.io/api/admin
+Sent to ALERT_TO (or CONTACT_TO) by the daily billing check, at most once a day.

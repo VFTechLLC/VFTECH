@@ -1,0 +1,18 @@
+Subject: Two-factor sign-in was turned off by our team
+
+Hi Pat,
+
+As you asked, we turned off two-factor sign-in for your VFTech account and signed out every device. Sign in with your email, then turn two-factor on again from your account page with your new phone.
+
+VF Tech
+kevinvf@vftech.io
+
+------------------------------------------------------------
+VF Tech, we modernize services, systems and technology with AI.
+Your account: https://vftech.io/account.html
+Pricing: https://vftech.io/websites.html#pricing
+Contact: https://vftech.io/contact.html
+Can't sign in? https://vftech.io/signin-help.html
+
+You're getting this because you have a VF Tech account. Account emails like this one can't be turned off.
+Terms: https://vftech.io/terms.html

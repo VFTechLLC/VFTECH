@@ -1,0 +1,25 @@
+{
+  "trigger": "Two-factor turned off (twofactor.js)",
+  "direction": "outbound",
+  "subject": "Two-factor sign-in is off",
+  "preheader": "You can turn it back on from your account page.",
+  "footer_note": "You're getting this because you have a VF Tech account. Account emails like this one can't be turned off.",
+  "body": [
+    "Hi {{name}},",
+    "Two-factor sign-in is now off for your VFTech account. You can turn it back on from your account page at any time.",
+    "If this wasn't you, reply to this email or use the Can't sign in? page straight away.",
+    {
+      "button": {
+        "label": "Can't sign in?",
+        "url": "{{link_help}}",
+        "text": "{{link_help}}"
+      }
+    },
+    {
+      "signoff": true
+    }
+  ],
+  "sample": {
+    "name": "Pat"
+  }
+}

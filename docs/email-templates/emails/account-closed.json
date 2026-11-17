@@ -1,0 +1,18 @@
+{
+  "trigger": "Account closed (closing.js)",
+  "direction": "outbound",
+  "subject": "Your VFTech account is closed",
+  "preheader": "We've deleted your profile, sign-ins and requests.",
+  "footer_note": "You're getting this one last email because your VF Tech account was closed.",
+  "body": [
+    "Hi {{name}},",
+    "Your VFTech account is now closed. We've deleted your profile, sign-ins and requests. Your invoices stay with our payment provider as tax records, and no further charges will be made.",
+    "You're welcome back any time: signing in with this email again starts a new account.",
+    {
+      "signoff": true
+    }
+  ],
+  "sample": {
+    "name": "Pat"
+  }
+}

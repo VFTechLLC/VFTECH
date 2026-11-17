@@ -1,0 +1,18 @@
+{
+  "trigger": "Team changed the sign-in email after a recovery request (admin.js)",
+  "direction": "outbound",
+  "subject": "Your VFTech sign-in email changed",
+  "preheader": "Every device was signed out.",
+  "footer_note": "You're getting this because you have a VF Tech account. Account emails like this one can't be turned off.",
+  "body": [
+    "Hi {{name}},",
+    "As you asked, your VFTech account now signs in with {{address}}. Every device was signed out. If you didn't ask for this, reply straight away.",
+    {
+      "signoff": true
+    }
+  ],
+  "sample": {
+    "name": "Pat",
+    "address": "new@example.com"
+  }
+}

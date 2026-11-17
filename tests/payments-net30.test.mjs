@@ -45,19 +45,19 @@ for (const [planId, interval] of [['priority', 'month'], ['standard', 'year']]) 
   const f = setup(t), login = await subscriber(f, planId, interval);
   let status = (await f.request('billing', undefined, as(login, false))).body.net30;
   assert.deepEqual(status, {eligible: true, active: false, requestedAt: null});
-  const sent = f.state.emails.length;
+  const sent = f.state.team.length;
   const r = await f.request('billing/net30', {}, as(login));
   assert.equal(r.status, 200);
   assert.ok(r.body.requestedAt);
-  assert.equal(f.state.emails.length, sent + 1);
-  const mail = f.state.emails.at(-1).payload;
+  assert.equal(f.state.team.length, sent + 1);
+  const mail = f.state.team.at(-1).payload;
   assert.deepEqual(mail.to, ['inbox@vftech.test']);
   assert.equal(mail.reply_to, 'one@example.test');
   assert.match(mail.subject, /Net-30 invoice request: one@example.test/);
   assert.match(mail.text, /Email invoice to the customer/);
   assert.match(mail.text, /Business: Pat Co/);
   await f.request('billing/net30', {}, as(login));
-  assert.equal(f.state.emails.length, sent + 1, 'asking again within 30 days sends nothing');
+  assert.equal(f.state.team.length, sent + 1, 'asking again within 30 days sends nothing');
   status = (await f.request('billing', undefined, as(login, false))).body.net30;
   assert.equal(status.requestedAt, r.body.requestedAt);
   assert.equal((await f.request('account/history', undefined, as(login, false))).body.events[0].type, 'net30_requested');
@@ -81,12 +81,12 @@ test('Contact requests from a Priority customer get [Priority] and the plan on f
   const f = setup(t), login = await subscriber(f, 'priority');
   let r = await f.request('contact', f.contact(), as(login, false));
   assert.equal(r.status, 201);
-  let mail = f.state.emails.at(-1).payload;
+  let mail = f.state.team.at(-1).payload;
   assert.match(mail.subject, /^\[Priority\] VFTech project request /);
   assert.match(mail.text, /Plan on file: Priority · signed in/);
   // Same email, not signed in: still flagged, and staff can see it wasn't signed in.
   r = await f.request('contact', f.contact());
-  mail = f.state.emails.at(-1).payload;
+  mail = f.state.team.at(-1).payload;
   assert.match(mail.subject, /^\[Priority\] /);
   assert.match(mail.text, /not signed in, same email/);
 });
@@ -94,12 +94,12 @@ test('Contact requests from a Priority customer get [Priority] and the plan on f
 test('Other contact requests are not flagged', async (t) => {
   const f = setup(t);
   await f.request('contact', f.contact({email: 'stranger@example.test'}));
-  let mail = f.state.emails.at(-1).payload;
+  let mail = f.state.team.at(-1).payload;
   assert.match(mail.subject, /^VFTech project request /);
   assert.match(mail.text, /Plan on file: No account/);
   await subscriber(f, 'standard');
   await f.request('contact', f.contact());
-  mail = f.state.emails.at(-1).payload;
+  mail = f.state.team.at(-1).payload;
   assert.match(mail.subject, /^VFTech project request /);
   assert.match(mail.text, /Plan on file: Standard/);
 });

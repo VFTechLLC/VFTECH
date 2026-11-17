@@ -1,0 +1,48 @@
+{
+  "trigger": "Stripe checkout completed for a plan (billing.js welcome)",
+  "direction": "outbound",
+  "subject": "Welcome to VFTech {{plan}}",
+  "preheader": "Thank you for choosing VF Tech. Here's what your plan includes.",
+  "footer_note": "You're getting this because you have a VF Tech plan. Billing emails like this one can't be turned off.",
+  "body": [
+    "Hi {{name}},",
+    "Welcome to VFTech {{plan}}. Thank you for choosing us.",
+    "What your plan includes:",
+    {
+      "list": "features"
+    },
+    {
+      "if": "kickoff",
+      "button": {
+        "label": "Book your kickoff call",
+        "url": "{{link_kickoff}}",
+        "text": "First step: book your kickoff call so we can plan the work together: {{link_kickoff}}"
+      }
+    },
+    {
+      "button": {
+        "label": "Open your account",
+        "url": "{{link_account}}",
+        "text": "Send requests and see your plan any time from your account: {{link_account}}"
+      }
+    },
+    {
+      "small": "Your receipt comes separately from our payment provider."
+    },
+    {
+      "signoff": true
+    }
+  ],
+  "sample": {
+    "name": "Pat",
+    "plan": "Priority",
+    "kickoff": "yes",
+    "features": [
+      "Changes handled by us: 8 hours each month",
+      "Response time: same business day",
+      "Hosting, domain and SSL, daily backups kept 30 days, uptime monitoring and security updates",
+      "The AI update assistant and a monthly traffic and lead report",
+      "A quarterly technology and search review"
+    ]
+  }
+}

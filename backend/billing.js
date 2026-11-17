@@ -329,13 +329,11 @@ export function billing({ HTTPError, json, now, origin, catalog, audit, mail }) 
     if (staff.length) await sendSafely(env, {
       to: staff,
       reply_to: active.customer.email,
-      subject: `Net-30 invoice request: ${active.customer.email}`,
-      text: [
-        `${row?.name || 'A customer'} (${active.customer.email}) asks to pay ${plans.get(sub.planId)?.name ?? sub.planId} ${sub.interval === 'year' ? 'annual' : 'monthly'} by invoice, due 30 days after it's sent.`,
-        `Business: ${row?.business || '—'}`, `Phone: ${row?.phone || '—'}`, `Subscription: ${sub.id}`, '',
-        'To approve: in Stripe, open the subscription, Edit, Payment, choose "Email invoice to the customer to pay manually" with 30 days to pay. The account page shows it once Stripe tells us. To decline, reply to the customer.',
-      ].join('\n'),
+      template: 'net30-request',
+      vars: { name: row?.name || 'A customer', email: active.customer.email, plan: plans.get(sub.planId)?.name ?? sub.planId, interval_word: sub.interval === 'year' ? 'annual' : 'monthly', business: row?.business, phone: row?.phone, subscription: sub.id },
     }, `net30-${active.customer.id}-${at}`);
+    // The customer's copy (email runbook), after the team's.
+    await sendSafely(env, { to: [active.customer.email], template: 'net30-confirmation', vars: { name: row?.name || 'there', plan: plans.get(sub.planId)?.name ?? sub.planId } }, `net30-confirm-${active.customer.id}-${at}`);
     return json({ requestedAt: at });
   }
 
@@ -355,33 +353,23 @@ export function billing({ HTTPError, json, now, origin, catalog, audit, mail }) 
     if (!owner || !row || !plans.has(row.planId)) return;
     const id = row.planId, plan = plans.get(id), account = `${origin(env)}/account.html`;
     await audit?.recordEvent(env, owner.id, 'subscribed', 'free', id);
-    const lines = [
-      `Hi ${owner.name || 'there'},`, '',
-      `Welcome to VFTech ${plan.name}. Thank you for choosing us.`, '',
-      'What your plan includes:',
-      `- Changes handled by us: ${featureDetail('hours', id) || 'as agreed'} each month`,
-      `- Response time: ${featureDetail('response', id) || 'as agreed'}`,
-      '- Hosting, domain and SSL, daily backups kept 30 days, uptime monitoring and security updates',
+    const features = [
+      `Changes handled by us: ${featureDetail('hours', id) || 'as agreed'} each month`,
+      `Response time: ${featureDetail('response', id) || 'as agreed'}`,
+      'Hosting, domain and SSL, daily backups kept 30 days, uptime monitoring and security updates',
     ];
-    if (id !== 'essentials') lines.push('- The AI update assistant and a monthly traffic and lead report');
-    if (id === 'priority') lines.push('- A quarterly technology and search review', '', `First step: book your kickoff call so we can plan the work together: ${origin(env)}/contact.html?plan=priority`);
-    lines.push('', `Send requests and see your plan any time from your account: ${account}`, 'Your receipt comes separately from our payment provider.', '', 'VF Tech', 'kevinvf@vftech.io');
-    await sendSafely(env, { to: [owner.email], subject: `Welcome to VFTech ${plan.name}`, text: lines.join('\n') }, `welcome-${session.id}`);
+    if (id !== 'essentials') features.push('The AI update assistant and a monthly traffic and lead report');
+    if (id === 'priority') features.push('A quarterly technology and search review');
+    await sendSafely(env, { to: [owner.email], template: 'welcome', vars: { name: owner.name || 'there', plan: plan.name, features, kickoff: id === 'priority' ? 'yes' : '' } }, `welcome-${session.id}`);
   }
 
   async function confirmChange(env, customer, event, fromId, toId, periodEnd, interval = 'month') {
     const from = plans.get(fromId)?.name ?? fromId, to = toId === 'free' ? 'Free' : plans.get(toId)?.name ?? toId, when = shortDay(periodEnd);
-    const message = {
-      upgraded: [`You're on ${to} now`, `Your plan changed from ${from} to ${to} today. The difference for the rest of this billing period was charged now, and your receipt comes separately. From ${when} it's ${priceText(toId, interval)}, plus tax where it applies.`],
-      switched_annual: [`You're on ${to} annual now`, `Your ${to} plan is billed yearly from today at ${yearlyPrice(toId)}, two months free compared with monthly. The unused part of this month was credited against the first year, and your receipt comes separately. You'll get a reminder 30 days before it renews.`],
-      switch_scheduled: [`Your switch to ${to} ${interval === 'year' ? 'annual' : 'monthly'} is scheduled`, `You keep your annual ${from} plan until ${when}, then it continues as ${to} at ${priceText(toId, interval)}. Nothing is charged today. Changed your mind? Keep your plan from your account page.`],
-      downgrade_scheduled: [`Your switch to ${to} is scheduled`, `You keep ${from} until ${when}, then your plan switches to ${to} at ${priceText(toId, interval)}. Nothing is charged today. Changed your mind? Keep ${from} from your account page.`],
-      cancel_scheduled: [`Your ${from} plan is cancelled`, `Your plan stays active until ${when}, then your account continues as Free, with no service plan. There are no further charges. Changed your mind? Keep your plan from your account page.`],
-      resumed: [`Your ${from} plan will renew`, `Your cancellation is undone. Your plan renews as usual on ${when}.`],
-      change_undone: [`You're staying on ${from}`, `Your scheduled switch is cancelled. You stay on ${from}, and it renews as usual on ${when}.`],
-    }[event];
-    if (!message) return;
-    await sendSafely(env, { to: [customer.email], subject: message[0], text: `Hi ${customer.name || 'there'},\n\n${message[1]}\n\nYour account: ${origin(env)}/account.html\n\nVF Tech\nkevinvf@vftech.io` }, `plan-${event}-${customer.id}-${now()}`);
+    // One email per event: docs/email-templates/emails/plan-<event>.json.
+    const template = { upgraded: 'plan-upgraded', switched_annual: 'plan-switched-annual', switch_scheduled: 'plan-switch-scheduled', downgrade_scheduled: 'plan-downgrade-scheduled', cancel_scheduled: 'plan-cancel-scheduled', resumed: 'plan-resumed', change_undone: 'plan-change-undone' }[event];
+    if (!template) return;
+    const vars = { name: customer.name || 'there', from, to, when, price: priceText(toId, interval), yearly_price: yearlyPrice(toId), interval_word: interval === 'year' ? 'annual' : 'monthly' };
+    await sendSafely(env, { to: [customer.email], template, vars }, `plan-${event}-${customer.id}-${now()}`);
   }
 
   // ---- Payment rules (spec phase 2) ----
@@ -460,16 +448,10 @@ export function billing({ HTTPError, json, now, origin, catalog, audit, mail }) 
 
   const TIMELINE = [7, 25, 30, 90];
   const longDate = (seconds) => new Date(seconds * 1000).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+  /** The day 7, 25, 30 or 90 email: docs/email-templates/emails/payment-day-<step>.json. */
   function timelineEmail(env, step, row) {
-    const plan = plans.get(row.planId)?.name ?? 'VFTech', hi = `Hi ${row.name || 'there'},`, link = `${origin(env)}/account.html`;
-    const suspends = longDate(row.since + 30 * DAY), closes = longDate(row.since + 90 * DAY), sign = 'VF Tech\nkevinvf@vftech.io';
-    const text = {
-      7: [`Payment needed for your ${plan} plan`, `${hi}\n\nWe still haven't been able to collect payment for your ${plan} plan, so work on your plan is paused until it's paid.\n\nSign in to pay what's owed or update your card: ${link}\n\nIf it's still unpaid on ${suspends}, your plan is suspended.\n\n${sign}`],
-      25: [`Your ${plan} plan is suspended in 5 days`, `${hi}\n\nYour ${plan} plan still has an unpaid balance. On ${suspends} it will be suspended and its features switched off.\n\nPay what's owed here: ${link}\n\n${sign}`],
-      30: [`Your ${plan} plan is suspended`, `${hi}\n\nYour ${plan} plan is now suspended because of an unpaid balance. Paying everything owed restores it straight away.\n\nIf it's not paid by ${closes}, your plan will be closed.\n\nPay here: ${link}\n\n${sign}`],
-      90: [`Your ${plan} plan is closed`, `${hi}\n\nThe balance on your ${plan} plan stayed unpaid for 90 days, so we have ended the plan and written the balance off. You can still sign in, and you're welcome back any time.\n\n${sign}`],
-    }[step];
-    return { subject: text[0], text: text[1] };
+    const plan = plans.get(row.planId)?.name ?? 'VFTech';
+    return { template: `payment-day-${step}`, vars: { name: row.name || 'there', plan, suspends: longDate(row.since + 30 * DAY), closes: longDate(row.since + 90 * DAY) } };
   }
 
   /**
@@ -511,9 +493,8 @@ export function billing({ HTTPError, json, now, origin, catalog, audit, mail }) 
       const nextId = row.pendingPlanId || row.planId, nextInterval = row.pendingPlanId ? row.pendingInterval || 'year' : 'year';
       const next = plans.get(nextId)?.name ?? nextId, plan = plans.get(row.planId)?.name ?? row.planId;
       const change = row.pendingPlanId ? `As you asked, it continues as ${next} ${nextInterval === 'year' ? 'annual' : 'monthly'} at ${priceText(nextId, nextInterval)}.` : `It renews for another year at ${yearlyPrice(row.planId)}, plus tax where it applies.`;
-      const text = `Hi ${row.name || 'there'},\n\nA reminder that your ${plan} annual plan renews on ${shortDay(row.periodEnd)}. ${change}\n\nNothing to do if that's what you want. To switch plans, move to monthly billing or cancel, use your account page before that date: ${origin(env)}/account.html\n\nVF Tech\nkevinvf@vftech.io`;
       try {
-        await mail(env, { to: [row.email], subject: `Your ${plan} plan renews on ${shortDay(row.periodEnd)}`, text }, `renewal-${row.id}-${row.periodEnd}`);
+        await mail(env, { to: [row.email], template: 'renewal-reminder', vars: { name: row.name || 'there', plan, date: shortDay(row.periodEnd), change_line: change } }, `renewal-${row.id}-${row.periodEnd}`);
         await env.DB.prepare('UPDATE subscriptions SET renewal_reminded=? WHERE id=?').bind(row.periodEnd, row.id).run();
         sent++;
       } catch (error) { console.error('renewal reminder', row.id, error?.message); }
@@ -539,15 +520,11 @@ export function billing({ HTTPError, json, now, origin, catalog, audit, mail }) 
     const when = (s) => new Date(s * 1000).toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
     const times = events.map((e) => e.created).sort((x, y) => x - y);
     const count = `${events.length}${list.has_more ? '+' : ''}`;
-    const text = [
-      `Stripe could not deliver ${count} event${events.length === 1 ? '' : 's'} to ${origin(env)}/api/stripe/webhook in the last day (${live(env) ? 'live' : 'test'} mode), between ${when(times[0])} and ${when(times.at(-1))}.`,
-      '',
-      ...Object.entries(byType).sort((x, y) => y[1] - x[1]).map(([type, n]) => `- ${type}: ${n}`),
-      '',
-      'Stripe keeps retrying for three days. Until delivery works, plan changes, payments and failed payments may not show on customers\' accounts.',
-      'Check: Stripe dashboard > Developers > Webhooks > the endpoint > failed deliveries (the response code says why); that STRIPE_WEBHOOK_SECRET on the Worker matches the endpoint\'s signing secret; the Worker\'s logs.',
-    ].join('\n');
-    await sendSafely(env, { to, subject: `Stripe webhooks failing: ${count} event${events.length === 1 ? '' : 's'} not delivered`, text }, `webhook-health-${new Date(now() * 1000).toISOString().slice(0, 10)}`);
+    const vars = {
+      count, events_word: events.length === 1 ? 'event' : 'events', webhook_url: `${origin(env)}/api/stripe/webhook`, mode: live(env) ? 'live' : 'test',
+      first: when(times[0]), last: when(times.at(-1)), by_type: Object.entries(byType).sort((x, y) => y[1] - x[1]).map(([type, n]) => `${type}: ${n}`),
+    };
+    await sendSafely(env, { to, template: 'webhook-alert', vars }, `webhook-health-${new Date(now() * 1000).toISOString().slice(0, 10)}`);
     return { failed: events.length };
   }
 

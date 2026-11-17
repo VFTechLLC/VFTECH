@@ -1,0 +1,5 @@
+{{content}}
+
+------------------------------------------------------------
+Sent {{sent_at}} by {{site_host}}. Admin page: {{link_admin}}
+{{footer_note}}

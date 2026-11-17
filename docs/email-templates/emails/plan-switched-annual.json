@@ -1,0 +1,30 @@
+{
+  "trigger": "Switched to annual billing (billing.js confirmChange)",
+  "direction": "outbound",
+  "subject": "You're on {{to}} annual now",
+  "preheader": "Your {{to}} plan is now billed yearly.",
+  "footer_note": "You're getting this because you have a VF Tech plan. Billing emails like this one can't be turned off.",
+  "body": [
+    "Hi {{name}},",
+    "Your {{to}} plan is billed yearly from today at {{yearly_price}}, two months free compared with monthly. The unused part of this month was credited against the first year, and your receipt comes separately. You'll get a reminder 30 days before it renews.",
+    {
+      "button": {
+        "label": "Open your account",
+        "url": "{{link_account}}",
+        "text": "Your account: {{link_account}}"
+      }
+    },
+    {
+      "signoff": true
+    }
+  ],
+  "sample": {
+    "name": "Pat",
+    "from": "Standard",
+    "to": "Standard",
+    "when": "December 17, 2026",
+    "price": "$1,500 a month",
+    "yearly_price": "$7,500 a year",
+    "interval_word": "monthly"
+  }
+}

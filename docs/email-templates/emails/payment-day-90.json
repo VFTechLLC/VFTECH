@@ -1,0 +1,18 @@
+{
+  "trigger": "Unpaid for 90 days, plan closed (billing.js dunning)",
+  "direction": "outbound",
+  "subject": "Your {{plan}} plan is closed",
+  "preheader": "The balance stayed unpaid for 90 days.",
+  "footer_note": "You're getting this because you have a VF Tech plan. Billing emails like this one can't be turned off.",
+  "body": [
+    "Hi {{name}},",
+    "The balance on your {{plan}} plan stayed unpaid for 90 days, so we have ended the plan and written the balance off. You can still sign in, and you're welcome back any time.",
+    {
+      "signoff": true
+    }
+  ],
+  "sample": {
+    "name": "Pat",
+    "plan": "Standard"
+  }
+}

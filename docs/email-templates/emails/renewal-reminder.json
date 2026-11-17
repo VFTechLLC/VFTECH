@@ -1,0 +1,28 @@
+{
+  "trigger": "Annual plan renews in 30 days (billing.js renewalReminders)",
+  "direction": "outbound",
+  "subject": "Your {{plan}} plan renews on {{date}}",
+  "preheader": "A reminder 30 days before your annual plan renews.",
+  "footer_note": "You're getting this because you have a VF Tech plan. Billing emails like this one can't be turned off.",
+  "body": [
+    "Hi {{name}},",
+    "A reminder that your {{plan}} annual plan renews on {{date}}. {{change_line}}",
+    "Nothing to do if that's what you want. To switch plans, move to monthly billing or cancel, use your account page before that date.",
+    {
+      "button": {
+        "label": "Open your account",
+        "url": "{{link_account}}",
+        "text": "Your account: {{link_account}}"
+      }
+    },
+    {
+      "signoff": true
+    }
+  ],
+  "sample": {
+    "name": "Pat",
+    "plan": "Standard",
+    "date": "December 17, 2026",
+    "change_line": "It renews for another year at $7,500 a year, plus tax where it applies."
+  }
+}

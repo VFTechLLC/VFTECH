@@ -1,0 +1,30 @@
+{
+  "trigger": "All of the month's plan hours used (admin.js addHours)",
+  "direction": "outbound",
+  "subject": "You’ve used this month’s plan hours",
+  "preheader": "Your hours reset on {{resets}}.",
+  "footer_note": "You're getting this because you have a VF Tech plan. Billing emails like this one can't be turned off.",
+  "body": [
+    "Hi {{name}},",
+    "So far this month we've spent {{used}} of the {{included}} {{hours_word}} your plan includes. Your hours reset on {{resets}}.",
+    "Extra work is ${{rate}} an hour, and we always quote it before we start, so nothing extra is charged without your OK.",
+    {
+      "button": {
+        "label": "See the details",
+        "url": "{{link_account}}",
+        "text": "See the details on your account page: {{link_account}}"
+      }
+    },
+    {
+      "signoff": true
+    }
+  ],
+  "sample": {
+    "name": "Pat",
+    "used": "3.5",
+    "included": "3",
+    "hours_word": "hours",
+    "resets": "December 1",
+    "rate": "250"
+  }
+}

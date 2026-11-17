@@ -1,0 +1,13 @@
+Subject: Net-30 invoice request: pat@example.com
+
+Pat Sample (pat@example.com) asks to pay Priority annual by invoice, due 30 days after it's sent.
+
+Business: Pat Co
+Phone: —
+Subscription: sub_123
+
+To approve: in Stripe, open the subscription, Edit, Payment, choose "Email invoice to the customer to pay manually" with 30 days to pay. The account page shows it once Stripe tells us. To decline, reply to the customer.
+
+------------------------------------------------------------
+Sent Nov 17, 2026, 10:04 AM ET by vftech.io. Admin page: https://vftech.io/api/admin
+Hit Reply to answer pat@example.com directly. Sent to CONTACT_TO by the vftech.io Worker.

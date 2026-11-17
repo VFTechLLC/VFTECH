@@ -1,0 +1,17 @@
+{
+  "trigger": "Code to confirm closing the account (closing.js)",
+  "direction": "outbound",
+  "subject": "Your code to close your VFTech account",
+  "preheader": "Your code expires in ten minutes.",
+  "footer_note": "You're getting this because someone signed in to your VF Tech account asked to close it.",
+  "body": [
+    {
+      "code": "code"
+    },
+    "Your code to close your VFTech account is {{code}}.",
+    "It expires in ten minutes and can be used once. If you didn't ask to close your account, ignore this email and nothing will change. Never share your code."
+  ],
+  "sample": {
+    "code": "305118"
+  }
+}

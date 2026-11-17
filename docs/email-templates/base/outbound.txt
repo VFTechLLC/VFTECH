@@ -1,0 +1,11 @@
+{{content}}
+
+------------------------------------------------------------
+VF Tech, we modernize services, systems and technology with AI.
+Your account: {{link_account}}
+Pricing: {{link_pricing}}
+Contact: {{link_contact}}
+Can't sign in? {{link_help}}
+
+{{footer_note}}
+Terms: {{link_terms}}

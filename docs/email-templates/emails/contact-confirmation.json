@@ -1,0 +1,52 @@
+{
+  "trigger": "Contact form, to the person who sent it (worker.js /api/contact)",
+  "direction": "outbound",
+  "subject": "We got your request, {{name}}",
+  "preheader": "Thanks for reaching out. Here's what you sent and what happens next.",
+  "footer_note": "You're getting this one-time confirmation because you sent a request on vftech.io. It doesn't sign you up for anything.",
+  "body": [
+    {
+      "heading": "Thanks, {{name}}. We got your request."
+    },
+    "We'll reply to {{email}} to set up a time to talk. Here's a copy of what you picked.",
+    {
+      "details": [
+        [
+          "Topics",
+          "topics"
+        ],
+        [
+          "Plan",
+          "plan"
+        ],
+        [
+          "Availability",
+          "times"
+        ],
+        [
+          "Request",
+          "request_id"
+        ]
+      ]
+    },
+    {
+      "button": {
+        "label": "See how we work",
+        "url": "{{link_process}}",
+        "text": "See how we work: {{link_process}}"
+      }
+    },
+    "Want to add anything? Reply to this email.",
+    {
+      "signoff": true
+    }
+  ],
+  "sample": {
+    "name": "Pat Sample",
+    "email": "pat@example.com",
+    "topics": "Website rebuild, AI integration",
+    "plan": "Standard ($750/mo)",
+    "times": "",
+    "request_id": "7c1f0a52-3b1e-4c8e-9d2a-0f4b6e1a9c33"
+  }
+}

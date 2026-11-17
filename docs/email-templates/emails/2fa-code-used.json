@@ -1,0 +1,27 @@
+{
+  "trigger": "A recovery code was used to sign in (twofactor.js)",
+  "direction": "outbound",
+  "subject": "A recovery code was used",
+  "preheader": "{{left}} unused {{codes_word}} left.",
+  "footer_note": "You're getting this because you have a VF Tech account. Account emails like this one can't be turned off.",
+  "body": [
+    "Hi {{name}},",
+    "Someone signed in to your VFTech account with a recovery code. {{left}} unused {{codes_word}} left. If you've lost your phone, turn two-factor off and on again from your account page to move it to a new one.",
+    "If this wasn't you, reply to this email or use the Can't sign in? page straight away.",
+    {
+      "button": {
+        "label": "Can't sign in?",
+        "url": "{{link_help}}",
+        "text": "{{link_help}}"
+      }
+    },
+    {
+      "signoff": true
+    }
+  ],
+  "sample": {
+    "name": "Pat",
+    "left": "7",
+    "codes_word": "codes"
+  }
+}

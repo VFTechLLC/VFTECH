@@ -1,0 +1,30 @@
+{
+  "trigger": "Plan upgraded (billing.js confirmChange)",
+  "direction": "outbound",
+  "subject": "You're on {{to}} now",
+  "preheader": "Your plan changed from {{from}} to {{to}} today.",
+  "footer_note": "You're getting this because you have a VF Tech plan. Billing emails like this one can't be turned off.",
+  "body": [
+    "Hi {{name}},",
+    "Your plan changed from {{from}} to {{to}} today. The difference for the rest of this billing period was charged now, and your receipt comes separately. From {{when}} it's {{price}}, plus tax where it applies.",
+    {
+      "button": {
+        "label": "Open your account",
+        "url": "{{link_account}}",
+        "text": "Your account: {{link_account}}"
+      }
+    },
+    {
+      "signoff": true
+    }
+  ],
+  "sample": {
+    "name": "Pat",
+    "from": "Standard",
+    "to": "Priority",
+    "when": "December 17, 2026",
+    "price": "$1,500 a month",
+    "yearly_price": "$15,000 a year",
+    "interval_word": "monthly"
+  }
+}
