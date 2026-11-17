@@ -1,0 +1,26 @@
+Subject: We got your request, Pat Sample
+
+Thanks, Pat Sample. We got your request.
+
+We'll reply to pat@example.com to set up a time to talk. Here's a copy of what you picked.
+
+Topics: Website rebuild, AI integration
+Plan: Standard ($750/mo)
+Request: 7c1f0a52-3b1e-4c8e-9d2a-0f4b6e1a9c33
+
+See how we work: https://vftech.io/process.html
+
+Want to add anything? Reply to this email.
+
+VF Tech
+kevinvf@vftech.io
+
+------------------------------------------------------------
+VF Tech, we modernize services, systems and technology with AI.
+Your account: https://vftech.io/account.html
+Pricing: https://vftech.io/websites.html#pricing
+Contact: https://vftech.io/contact.html
+Can't sign in? https://vftech.io/signin-help.html
+
+You're getting this one-time confirmation because you sent a request on vftech.io. It doesn't sign you up for anything.
+Terms: https://vftech.io/terms.html

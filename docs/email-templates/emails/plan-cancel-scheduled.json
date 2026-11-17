@@ -1,0 +1,30 @@
+{
+  "trigger": "Plan cancelled at period end (billing.js confirmChange)",
+  "direction": "outbound",
+  "subject": "Your {{from}} plan is cancelled",
+  "preheader": "Your plan stays active until {{when}}.",
+  "footer_note": "You're getting this because you have a VF Tech plan. Billing emails like this one can't be turned off.",
+  "body": [
+    "Hi {{name}},",
+    "Your plan stays active until {{when}}, then your account continues as Free, with no service plan. There are no further charges. Changed your mind? Keep your plan from your account page.",
+    {
+      "button": {
+        "label": "Open your account",
+        "url": "{{link_account}}",
+        "text": "Your account: {{link_account}}"
+      }
+    },
+    {
+      "signoff": true
+    }
+  ],
+  "sample": {
+    "name": "Pat",
+    "from": "Standard",
+    "to": "Priority",
+    "when": "December 17, 2026",
+    "price": "$1,500 a month",
+    "yearly_price": "$15,000 a year",
+    "interval_word": "monthly"
+  }
+}

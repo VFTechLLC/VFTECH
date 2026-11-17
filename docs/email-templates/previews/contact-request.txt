@@ -1,0 +1,22 @@
+Subject: [Priority] VFTech project request 7c1f0a52-3b1e-4c8e-9d2a-0f4b6e1a9c33
+
+Pat Sample
+
+Reply: pat@example.com
+
+Request: 7c1f0a52-3b1e-4c8e-9d2a-0f4b6e1a9c33
+Name: Pat Sample
+Email: pat@example.com
+Plan on file: Priority · signed in
+Business: Pat Co
+Phone: —
+Topics: Website rebuild, AI integration
+Plan: Standard ($750/mo)
+Availability: Weekday mornings
+
+We need a rebuild before spring.
+<b>test</b> & "quotes"
+
+------------------------------------------------------------
+Sent Nov 17, 2026, 10:04 AM ET by vftech.io. Admin page: https://vftech.io/api/admin
+Hit Reply to answer pat@example.com directly. Sent to CONTACT_TO by the vftech.io Worker.

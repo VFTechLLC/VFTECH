@@ -1,0 +1,73 @@
+{
+  "trigger": "Can't sign in? form, to the team (worker.js /api/auth/recovery)",
+  "direction": "inbound",
+  "header_label": "Account recovery",
+  "subject": "Account recovery request: {{old_email}}",
+  "preheader": "{{name}} wants to move {{old_email}} to {{new_email}}",
+  "footer_note": "Sent to CONTACT_TO by the vftech.io Worker.",
+  "body": [
+    {
+      "details": [
+        [
+          "Request",
+          "request_id"
+        ],
+        [
+          "Account on file for the old email",
+          "found_line"
+        ],
+        [
+          "Name",
+          "name"
+        ],
+        [
+          "Old email (lost access)",
+          "old_email"
+        ],
+        [
+          "New email",
+          "new_email"
+        ],
+        [
+          "Invoice number",
+          "invoice",
+          "—"
+        ],
+        [
+          "Card last four",
+          "card_last4",
+          "—"
+        ],
+        [
+          "Phone",
+          "phone",
+          "—"
+        ]
+      ]
+    },
+    {
+      "message": "message"
+    },
+    {
+      "small": "Verify at least one detail against Stripe and the profile before changing anything. Steps: backend/README.md, \"Account recovery\"."
+    },
+    {
+      "button": {
+        "label": "Open the admin page",
+        "url": "{{link_admin}}",
+        "text": "Admin page: {{link_admin}}"
+      }
+    }
+  ],
+  "sample": {
+    "request_id": "3e9b7d10-5a2c-4f1e-8b6d-2c9a1e7f0b44",
+    "found_line": "yes",
+    "name": "Pat Sample",
+    "old_email": "old@example.com",
+    "new_email": "new@example.com",
+    "invoice": "VF-0012",
+    "card_last4": "",
+    "phone": "",
+    "message": "(no message)"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "trigger": "Downgrade scheduled for the end of the period (billing.js confirmChange)",
+  "direction": "outbound",
+  "subject": "Your switch to {{to}} is scheduled",
+  "preheader": "Nothing is charged today.",
+  "footer_note": "You're getting this because you have a VF Tech plan. Billing emails like this one can't be turned off.",
+  "body": [
+    "Hi {{name}},",
+    "You keep {{from}} until {{when}}, then your plan switches to {{to}} at {{price}}. Nothing is charged today. Changed your mind? Keep {{from}} from your account page.",
+    {
+      "button": {
+        "label": "Open your account",
+        "url": "{{link_account}}",
+        "text": "Your account: {{link_account}}"
+      }
+    },
+    {
+      "signoff": true
+    }
+  ],
+  "sample": {
+    "name": "Pat",
+    "from": "Priority",
+    "to": "Essentials",
+    "when": "December 17, 2026",
+    "price": "$350 a month",
+    "yearly_price": "$15,000 a year",
+    "interval_word": "monthly"
+  }
+}

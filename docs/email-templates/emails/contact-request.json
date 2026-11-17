@@ -1,0 +1,81 @@
+{
+  "trigger": "Contact form, to the team (worker.js /api/contact)",
+  "direction": "inbound",
+  "header_label": "Project request",
+  "subject": "{{#priority}}[Priority] {{/priority}}VFTech project request {{request_id}}",
+  "preheader": "{{name}}, {{topics}}",
+  "footer_note": "Hit Reply to answer {{email}} directly. Sent to CONTACT_TO by the vftech.io Worker.",
+  "body": [
+    {
+      "heading": "{{name}}"
+    },
+    {
+      "button": {
+        "label": "Reply to {{name}}",
+        "url": "mailto:{{email}}",
+        "text": "Reply: {{email}}"
+      }
+    },
+    {
+      "details": [
+        [
+          "Request",
+          "request_id"
+        ],
+        [
+          "Name",
+          "name"
+        ],
+        [
+          "Email",
+          "email"
+        ],
+        [
+          "Plan on file",
+          "plan_on_file"
+        ],
+        [
+          "Business",
+          "business",
+          "—"
+        ],
+        [
+          "Phone",
+          "phone",
+          "—"
+        ],
+        [
+          "Topics",
+          "topics",
+          "Not selected"
+        ],
+        [
+          "Plan",
+          "plan",
+          "Not selected"
+        ],
+        [
+          "Availability",
+          "times",
+          "—"
+        ]
+      ]
+    },
+    {
+      "message": "message"
+    }
+  ],
+  "sample": {
+    "priority": "yes",
+    "request_id": "7c1f0a52-3b1e-4c8e-9d2a-0f4b6e1a9c33",
+    "name": "Pat Sample",
+    "email": "pat@example.com",
+    "plan_on_file": "Priority · signed in",
+    "business": "Pat Co",
+    "phone": "",
+    "topics": "Website rebuild, AI integration",
+    "plan": "Standard ($750/mo)",
+    "times": "Weekday mornings",
+    "message": "We need a rebuild before spring.\n<b>test</b> & \"quotes\""
+  }
+}

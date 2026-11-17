@@ -1,0 +1,41 @@
+{
+  "trigger": "Pay by invoice request from the account page, to the team (billing.js requestNet30)",
+  "direction": "inbound",
+  "header_label": "Net-30 request",
+  "subject": "Net-30 invoice request: {{email}}",
+  "preheader": "{{name}} asks to pay {{plan}} by invoice",
+  "footer_note": "Hit Reply to answer {{email}} directly. Sent to CONTACT_TO by the vftech.io Worker.",
+  "body": [
+    "{{name}} ({{email}}) asks to pay {{plan}} {{interval_word}} by invoice, due 30 days after it's sent.",
+    {
+      "details": [
+        [
+          "Business",
+          "business",
+          "—"
+        ],
+        [
+          "Phone",
+          "phone",
+          "—"
+        ],
+        [
+          "Subscription",
+          "subscription"
+        ]
+      ]
+    },
+    {
+      "small": "To approve: in Stripe, open the subscription, Edit, Payment, choose \"Email invoice to the customer to pay manually\" with 30 days to pay. The account page shows it once Stripe tells us. To decline, reply to the customer."
+    }
+  ],
+  "sample": {
+    "name": "Pat Sample",
+    "email": "pat@example.com",
+    "plan": "Priority",
+    "interval_word": "annual",
+    "business": "Pat Co",
+    "phone": "",
+    "subscription": "sub_123"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "trigger": "Annual plan set to switch at renewal (billing.js confirmChange)",
+  "direction": "outbound",
+  "subject": "Your switch to {{to}} {{interval_word}} is scheduled",
+  "preheader": "Nothing is charged today.",
+  "footer_note": "You're getting this because you have a VF Tech plan. Billing emails like this one can't be turned off.",
+  "body": [
+    "Hi {{name}},",
+    "You keep your annual {{from}} plan until {{when}}, then it continues as {{to}} at {{price}}. Nothing is charged today. Changed your mind? Keep your plan from your account page.",
+    {
+      "button": {
+        "label": "Open your account",
+        "url": "{{link_account}}",
+        "text": "Your account: {{link_account}}"
+      }
+    },
+    {
+      "signoff": true
+    }
+  ],
+  "sample": {
+    "name": "Pat",
+    "from": "Standard",
+    "to": "Standard",
+    "when": "December 17, 2026",
+    "price": "$750 a month",
+    "yearly_price": "$15,000 a year",
+    "interval_word": "monthly"
+  }
+}

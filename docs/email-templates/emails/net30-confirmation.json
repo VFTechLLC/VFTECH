@@ -1,0 +1,25 @@
+{
+  "trigger": "Pay by invoice request, to the customer (billing.js requestNet30)",
+  "direction": "outbound",
+  "subject": "We got your request to pay by invoice",
+  "preheader": "We'll review it and reply by email.",
+  "footer_note": "You're getting this because you have a VF Tech plan. Billing emails like this one can't be turned off.",
+  "body": [
+    "Hi {{name}},",
+    "We got your request to pay your {{plan}} plan by invoice, due 30 days after it's sent. We'll review it and reply by email. Once it's set up, your account page shows it.",
+    {
+      "button": {
+        "label": "Open your account",
+        "url": "{{link_account}}",
+        "text": "Your account: {{link_account}}"
+      }
+    },
+    {
+      "signoff": true
+    }
+  ],
+  "sample": {
+    "name": "Pat",
+    "plan": "Priority"
+  }
+}

@@ -5,6 +5,7 @@ import {accounts} from './account.js';
 import {closing} from './closing.js';
 import {twoFactor} from './twofactor.js';
 import {admin} from './admin.js';
+import {prepare} from './mailer.js';
 const COOKIE='__Host-vftech-session',SESSION_SECONDS=7*24*3600,CODE_SECONDS=600,MFA_SECONDS=600;
 const encoder=new TextEncoder();
 const TOPICS=new Set(['Website rebuild','Platform migration','AI integration','Support plan','Advisory or fractional leadership','Not sure yet']);
@@ -27,7 +28,7 @@ async function hmac(env,text){const key=await crypto.subtle.importKey('raw',enco
 function equal(a,b){if(typeof a!=='string'||typeof b!=='string'||a.length!==b.length)return false;let diff=0;for(let i=0;i<a.length;i++)diff|=a.charCodeAt(i)^b.charCodeAt(i);return diff===0;}
 async function limit(env,label,value,max,seconds){const timestamp=now(),bucket=Math.floor(timestamp/seconds),key=await digest(`${label}:${value}:${bucket}`);const row=await env.DB.prepare('INSERT INTO rate_limits (key,hits,expires_at) VALUES (?,1,?) ON CONFLICT(key) DO UPDATE SET hits=hits+1 RETURNING hits').bind(key,(bucket+1)*seconds).first();if(row.hits>max)throw new HTTPError(429,'Too many attempts. Please try again later.');}
 async function captcha(request,env,input,action){const token=field(input.turnstileToken,'verification',2048,true);try{const fields={secret:env.TURNSTILE_SECRET_KEY,response:token};const ip=request.headers.get('CF-Connecting-IP');if(ip)fields.remoteip=ip;const response=await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify',{method:'POST',body:new URLSearchParams(fields),signal:AbortSignal.timeout(8000)});if(!response.ok)throw Error();const result=await response.json();if(result.success!==true||result.hostname!==env.TURNSTILE_HOSTNAME||result.action!==action)throw new HTTPError(400,'Verification failed. Please try the CAPTCHA again.');}catch(error){if(error instanceof HTTPError)throw error;throw new HTTPError(503,'Verification is temporarily unavailable. Please try again.');}}
-async function send(env,payload,key){try{const response=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${env.RESEND_API_KEY}`,'Content-Type':'application/json','Idempotency-Key':key},body:JSON.stringify({from:env.EMAIL_FROM,...payload}),signal:AbortSignal.timeout(10000)});if(!response.ok||!(await response.json()).id)throw Error();}catch{throw new HTTPError(502,'Email delivery could not be accepted. Please try again.');}}
+async function send(env,payload,key){try{const response=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${env.RESEND_API_KEY}`,'Content-Type':'application/json','Idempotency-Key':key},body:JSON.stringify({from:env.EMAIL_FROM,...prepare(env,payload)}),signal:AbortSignal.timeout(10000)});if(!response.ok||!(await response.json()).id)throw Error();}catch{throw new HTTPError(502,'Email delivery could not be accepted. Please try again.');}}
 function uuid(value,name){if(typeof value!=='string'||! /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value))throw new HTTPError(400,`Check ${name}.`);return value.toLowerCase();}
 async function contact(request,env,input){
   requireReady(env,'contactEnabled');if(input.website)throw new HTTPError(400,'The request could not be verified.');
@@ -43,7 +44,10 @@ async function contact(request,env,input){
   if(claim.meta.changes!==1)throw new HTTPError(409,'This request is already processing.');
   // Priority flagging (spec phase 4): the plan on file for this email, and whether the sender was signed in as it.
   const onFile=await planOnFile(request,env,data.email);
-  try{const selected=[...catalog.builds,...catalog.plans].find(p=>p.id===data.planId);await send(env,{to:env.CONTACT_TO.split(",").map(s=>s.trim()).filter(Boolean),reply_to:data.email,subject:`${onFile.tier==='priority'?'[Priority] ':''}VFTech project request ${id}`,text:[`Request: ${id}`,`Name: ${data.name}`,`Email: ${data.email}`,`Plan on file: ${onFile.label}`,`Business: ${data.business||'—'}`,`Phone: ${data.phone||'—'}`,`Topics: ${data.topics.join(', ')||'Not selected'}`,`Plan: ${selected?`${selected.name} (${selected.price})`:'Not selected'}`,`Availability: ${data.times||'—'}`,'',data.message].join('\n')},`contact-${id}`);await env.DB.prepare("UPDATE contact_requests SET status='sent' WHERE id=?").bind(id).run();return json({accepted:true,requestId:id},201);}catch(error){await env.DB.prepare("UPDATE contact_requests SET status='failed' WHERE id=?").bind(id).run();throw error;}
+  try{const selected=[...catalog.builds,...catalog.plans].find(p=>p.id===data.planId);await send(env,{to:env.CONTACT_TO.split(",").map(s=>s.trim()).filter(Boolean),reply_to:data.email,template:'contact-request',vars:{priority:onFile.tier==='priority'?'yes':'',request_id:id,name:data.name,email:data.email,plan_on_file:onFile.label,business:data.business,phone:data.phone,topics:data.topics.join(', '),plan:selected?`${selected.name} (${selected.price})`:'',times:data.times,message:data.message}},`contact-${id}`);await env.DB.prepare("UPDATE contact_requests SET status='sent' WHERE id=?").bind(id).run();
+    // The sender's copy (email runbook): best-effort, after the team has it, so a failure here never loses the request.
+    try{await send(env,{to:[data.email],template:'contact-confirmation',vars:{name:data.name,email:data.email,topics:data.topics.join(', '),plan:selected?`${selected.name} (${selected.price})`:'',times:data.times,request_id:id}},`contact-confirm-${id}`);}catch(error){console.error('contact confirmation',id,error?.message);}
+    return json({accepted:true,requestId:id},201);}catch(error){await env.DB.prepare("UPDATE contact_requests SET status='failed' WHERE id=?").bind(id).run();throw error;}
 }
 async function planOnFile(request,env,address){
   try{const owner=await env.DB.prepare('SELECT id FROM customers WHERE email=?').bind(address).first();if(!owner)return {tier:null,label:'No account'};
@@ -59,7 +63,7 @@ async function requestCode(request,env,input){
   if(input.existingOnly===true&&!(await env.DB.prepare('SELECT 1 AS found FROM customers WHERE email=?').bind(address).first()))return json({challengeId:crypto.randomUUID(),expiresIn:CODE_SECONDS},201);
   const id=crypto.randomUUID(),value=code(),timestamp=now(),hash=await hmac(env,`code:${id}:${address}:${value}`);
   await env.DB.prepare('INSERT INTO auth_challenges (id,email,name,code_hash,expires_at,created_at) VALUES (?,?,?,?,?,?)').bind(id,address,name,hash,timestamp+CODE_SECONDS,timestamp).run();
-  try{await send(env,{to:[address],subject:'Your VFTech verification code',text:`Your VFTech verification code is ${value}.\n\nIt expires in ten minutes and can be used once. If you did not request it, ignore this email. Never share your code.`},`code-${id}`);}catch(error){await env.DB.prepare('DELETE FROM auth_challenges WHERE id=?').bind(id).run();throw error;}
+  try{await send(env,{to:[address],template:'sign-in-code',vars:{code:value}},`code-${id}`);}catch(error){await env.DB.prepare('DELETE FROM auth_challenges WHERE id=?').bind(id).run();throw error;}
   return json({challengeId:id,expiresIn:CODE_SECONDS},201);
 }
 async function recovery(request,env,input){
@@ -71,7 +75,7 @@ async function recovery(request,env,input){
   await limit(env,'recovery-ip',request.headers.get('CF-Connecting-IP')||'unknown',5,3600);await limit(env,'recovery-email',data.oldEmail,3,86400);await captcha(request,env,input,'account');
   const id=crypto.randomUUID(),found=await env.DB.prepare('SELECT id FROM customers WHERE email=?').bind(data.oldEmail).first();
   await env.DB.prepare('INSERT INTO recovery_requests (id,old_email,new_email,name,invoice,card_last4,phone,message,account_found,ip_hash,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)').bind(id,data.oldEmail,data.newEmail,data.name,data.invoice,data.cardLast4,data.phone,data.message,found?1:0,await hmac(env,'ip:'+(request.headers.get('CF-Connecting-IP')||'unknown')),now()).run();
-  await send(env,{to:env.CONTACT_TO.split(',').map(s=>s.trim()).filter(Boolean),subject:`Account recovery request: ${data.oldEmail}`,text:[`Request: ${id}`,`Account on file for the old email: ${found?'yes':'NO, nothing to recover'}`,`Name: ${data.name}`,`Old email (lost access): ${data.oldEmail}`,`New email: ${data.newEmail}`,`Invoice number: ${data.invoice||'—'}`,`Card last four: ${data.cardLast4||'—'}`,`Phone: ${data.phone||'—'}`,'',data.message||'(no message)','','Verify at least one detail against Stripe and the profile before changing anything. Steps: backend/README.md, "Account recovery".'].join('\n')},`recovery-${id}`);
+  await send(env,{to:env.CONTACT_TO.split(',').map(s=>s.trim()).filter(Boolean),template:'recovery-request',vars:{request_id:id,found_line:found?'yes':'NO, nothing to recover',name:data.name,old_email:data.oldEmail,new_email:data.newEmail,invoice:data.invoice,card_last4:data.cardLast4,phone:data.phone,message:data.message||'(no message)'}},`recovery-${id}`);
   return json({received:true},201);
 }
 async function verifyCode(request,env,input){

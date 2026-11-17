@@ -63,8 +63,9 @@ export function admin({ HTTPError, json, now, origin, catalog, send, stripe, pla
     return row;
   }
   const endSessions = (env, id) => env.DB.prepare('DELETE FROM sessions WHERE customer_id=?').bind(id).run();
-  async function mailCustomer(env, row, subject, body, key) {
-    try { await send(env, { to: [row.email], subject, text: `Hi ${row.name || 'there'},\n\n${body}\n\nVF Tech\nkevinvf@vftech.io` }, key); }
+  /** An account email to one customer: docs/email-templates/emails/<template>.json. */
+  async function mailCustomer(env, row, template, vars, key) {
+    try { await send(env, { to: [row.email], template, vars: { name: row.name || 'there', ...vars } }, key); }
     catch (error) { console.error('admin email', key, error?.message); }
   }
 
@@ -110,8 +111,8 @@ export function admin({ HTTPError, json, now, origin, catalog, send, stripe, pla
     if (m.warn && row.hoursWarned !== mark) {
       await env.DB.prepare('UPDATE customers SET hours_warned=? WHERE id=?').bind(mark, row.id).run();
       const resets = new Date(m.periodEnd * 1000).toLocaleDateString('en-US', { month: 'long', day: 'numeric', timeZone: 'UTC' });
-      await mailCustomer(env, row, m.over ? 'You’ve used this month’s plan hours' : 'You’ve used 80% of this month’s plan hours',
-        `So far this month we've spent ${m.used} of the ${m.included} hour${m.included === 1 ? '' : 's'} your plan includes. Your hours reset on ${resets}.\n\nExtra work is $${m.extraRate} an hour, and we always quote it before we start, so nothing extra is charged without your OK. See the details on your account page: ${origin(env)}/account.html`,
+      await mailCustomer(env, row, m.over ? 'hours-used' : 'hours-80',
+        { used: String(m.used), included: String(m.included), hours_word: m.included === 1 ? 'hour' : 'hours', resets, rate: String(m.extraRate) },
         `hours-${row.id}-${mark}`);
     }
     return json({ id, hours: m }, 201);
@@ -156,7 +157,7 @@ export function admin({ HTTPError, json, now, origin, catalog, send, stripe, pla
       env.DB.prepare('DELETE FROM sessions WHERE customer_id=?').bind(row.id),
     ]);
     await log(env, actor, 'two_factor_reset', row.id);
-    await mailCustomer(env, row, 'Two-factor sign-in was turned off by our team', 'As you asked, we turned off two-factor sign-in for your VFTech account and signed out every device. Sign in with your email, then turn two-factor on again from your account page with your new phone.', `2fa-reset-${row.id}-${now()}`);
+    await mailCustomer(env, row, '2fa-reset-by-team', {}, `2fa-reset-${row.id}-${now()}`);
     return json({ reset: true });
   }
   /** POST /api/admin/end-sessions {customerId} */
@@ -177,7 +178,7 @@ export function admin({ HTTPError, json, now, origin, catalog, send, stripe, pla
     if (row.stripeCustomer && env.STRIPE_SECRET_KEY) { try { await stripe(env, 'POST', `customers/${row.stripeCustomer}`, { email: address }); } catch (error) { console.error('stripe email', error?.message); } }
     if (typeof input.requestId === 'string' && input.requestId) await env.DB.prepare("UPDATE recovery_requests SET status='done',handled_by=?,handled_at=? WHERE id=?").bind(actor.email, now(), input.requestId).run();
     await log(env, actor, 'email_changed', row.id, `${row.email} -> ${address}`);
-    await mailCustomer(env, { ...row, email: address }, 'Your VFTech sign-in email changed', `As you asked, your VFTech account now signs in with ${address}. Every device was signed out. If you didn't ask for this, reply straight away.`, `email-changed-${row.id}-${now()}`);
+    await mailCustomer(env, { ...row, email: address }, 'email-changed', { address }, `email-changed-${row.id}-${now()}`);
     return json({ email: address });
   }
   /** GET /api/admin/recovery: open "Can't sign in?" requests, with the account they point to. */

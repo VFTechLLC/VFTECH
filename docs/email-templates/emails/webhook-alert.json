@@ -1,0 +1,30 @@
+{
+  "trigger": "Daily check finds Stripe events not delivered (billing.js webhookHealth)",
+  "direction": "inbound",
+  "header_label": "Billing alert",
+  "subject": "Stripe webhooks failing: {{count}} {{events_word}} not delivered",
+  "preheader": "Plan changes and payments may not show on accounts.",
+  "footer_note": "Sent to ALERT_TO (or CONTACT_TO) by the daily billing check, at most once a day.",
+  "body": [
+    "Stripe could not deliver {{count}} {{events_word}} to {{webhook_url}} in the last day ({{mode}} mode), between {{first}} and {{last}}.",
+    {
+      "list": "by_type"
+    },
+    "Stripe keeps retrying for three days. Until delivery works, plan changes, payments and failed payments may not show on customers' accounts.",
+    {
+      "small": "Check: Stripe dashboard > Developers > Webhooks > the endpoint > failed deliveries (the response code says why); that STRIPE_WEBHOOK_SECRET on the Worker matches the endpoint's signing secret; the Worker's logs."
+    }
+  ],
+  "sample": {
+    "count": "3",
+    "events_word": "events",
+    "webhook_url": "https://vftech.io/api/stripe/webhook",
+    "mode": "test",
+    "first": "2026-11-16 09:12 UTC",
+    "last": "2026-11-16 21:40 UTC",
+    "by_type": [
+      "invoice.paid: 2",
+      "customer.updated: 1"
+    ]
+  }
+}

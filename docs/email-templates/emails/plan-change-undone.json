@@ -1,0 +1,30 @@
+{
+  "trigger": "Scheduled switch cancelled (billing.js confirmChange)",
+  "direction": "outbound",
+  "subject": "You're staying on {{from}}",
+  "preheader": "Your scheduled switch is cancelled.",
+  "footer_note": "You're getting this because you have a VF Tech plan. Billing emails like this one can't be turned off.",
+  "body": [
+    "Hi {{name}},",
+    "Your scheduled switch is cancelled. You stay on {{from}}, and it renews as usual on {{when}}.",
+    {
+      "button": {
+        "label": "Open your account",
+        "url": "{{link_account}}",
+        "text": "Your account: {{link_account}}"
+      }
+    },
+    {
+      "signoff": true
+    }
+  ],
+  "sample": {
+    "name": "Pat",
+    "from": "Standard",
+    "to": "Priority",
+    "when": "December 17, 2026",
+    "price": "$1,500 a month",
+    "yearly_price": "$15,000 a year",
+    "interval_word": "monthly"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "trigger": "Unpaid for 30 days, plan suspended (billing.js dunning)",
+  "direction": "outbound",
+  "subject": "Your {{plan}} plan is suspended",
+  "preheader": "Paying everything owed restores it straight away.",
+  "footer_note": "You're getting this because you have a VF Tech plan. Billing emails like this one can't be turned off.",
+  "body": [
+    "Hi {{name}},",
+    "Your {{plan}} plan is now suspended because of an unpaid balance. Paying everything owed restores it straight away.",
+    "If it's not paid by {{closes}}, your plan will be closed.",
+    {
+      "button": {
+        "label": "Pay now",
+        "url": "{{link_account}}",
+        "text": "Pay here: {{link_account}}"
+      }
+    },
+    {
+      "signoff": true
+    }
+  ],
+  "sample": {
+    "name": "Pat",
+    "plan": "Standard",
+    "closes": "February 14, 2027"
+  }
+}

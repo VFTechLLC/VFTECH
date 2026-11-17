@@ -1,0 +1,26 @@
+{
+  "trigger": "Unpaid for 25 days (billing.js dunning)",
+  "direction": "outbound",
+  "subject": "Your {{plan}} plan is suspended in 5 days",
+  "preheader": "Your plan still has an unpaid balance.",
+  "footer_note": "You're getting this because you have a VF Tech plan. Billing emails like this one can't be turned off.",
+  "body": [
+    "Hi {{name}},",
+    "Your {{plan}} plan still has an unpaid balance. On {{suspends}} it will be suspended and its features switched off.",
+    {
+      "button": {
+        "label": "Pay what's owed",
+        "url": "{{link_account}}",
+        "text": "Pay what's owed here: {{link_account}}"
+      }
+    },
+    {
+      "signoff": true
+    }
+  ],
+  "sample": {
+    "name": "Pat",
+    "plan": "Standard",
+    "suspends": "December 17, 2026"
+  }
+}

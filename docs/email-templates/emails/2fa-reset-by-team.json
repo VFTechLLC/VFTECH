@@ -1,0 +1,17 @@
+{
+  "trigger": "Team turned two-factor off from the admin page (admin.js)",
+  "direction": "outbound",
+  "subject": "Two-factor sign-in was turned off by our team",
+  "preheader": "Every device was signed out.",
+  "footer_note": "You're getting this because you have a VF Tech account. Account emails like this one can't be turned off.",
+  "body": [
+    "Hi {{name}},",
+    "As you asked, we turned off two-factor sign-in for your VFTech account and signed out every device. Sign in with your email, then turn two-factor on again from your account page with your new phone.",
+    {
+      "signoff": true
+    }
+  ],
+  "sample": {
+    "name": "Pat"
+  }
+}

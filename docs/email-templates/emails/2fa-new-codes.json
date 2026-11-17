@@ -1,0 +1,25 @@
+{
+  "trigger": "New recovery codes made (twofactor.js)",
+  "direction": "outbound",
+  "subject": "New recovery codes for your VFTech account",
+  "preheader": "The old ones no longer work.",
+  "footer_note": "You're getting this because you have a VF Tech account. Account emails like this one can't be turned off.",
+  "body": [
+    "Hi {{name}},",
+    "You made new two-factor recovery codes. The old ones no longer work.",
+    "If this wasn't you, reply to this email or use the Can't sign in? page straight away.",
+    {
+      "button": {
+        "label": "Can't sign in?",
+        "url": "{{link_help}}",
+        "text": "{{link_help}}"
+      }
+    },
+    {
+      "signoff": true
+    }
+  ],
+  "sample": {
+    "name": "Pat"
+  }
+}

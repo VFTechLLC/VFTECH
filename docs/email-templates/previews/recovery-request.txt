@@ -1,0 +1,20 @@
+Subject: Account recovery request: old@example.com
+
+Request: 3e9b7d10-5a2c-4f1e-8b6d-2c9a1e7f0b44
+Account on file for the old email: yes
+Name: Pat Sample
+Old email (lost access): old@example.com
+New email: new@example.com
+Invoice number: VF-0012
+Card last four: —
+Phone: —
+
+(no message)
+
+Verify at least one detail against Stripe and the profile before changing anything. Steps: backend/README.md, "Account recovery".
+
+Admin page: https://vftech.io/api/admin
+
+------------------------------------------------------------
+Sent Nov 17, 2026, 10:04 AM ET by vftech.io. Admin page: https://vftech.io/api/admin
+Sent to CONTACT_TO by the vftech.io Worker.

@@ -107,8 +107,9 @@ export function twoFactor({ HTTPError, json, now, hmac, digest, equal, send, lim
     if (!how) throw new HTTPError(400, input?.recoveryCode ? 'That recovery code is wrong or already used.' : 'That code is wrong or expired. Use the newest code from your app.');
     return how;
   }
-  async function notify(env, customer, subject, line) {
-    try { await send(env, { to: [customer.email], subject, text: `Hi ${customer.name || 'there'},\n\n${line}\n\nIf this wasn't you, reply to this email or use the Can't sign in? page straight away: ${origin(env)}/signin-help.html\n\nVF Tech\nkevinvf@vftech.io` }, `2fa-${customer.id}-${now()}`); }
+  /** Security notice: docs/email-templates/emails/<template>.json. */
+  async function notify(env, customer, template, vars = {}) {
+    try { await send(env, { to: [customer.email], template, vars: { name: customer.name || 'there', ...vars } }, `2fa-${customer.id}-${now()}`); }
     catch (error) { console.error('2fa email', error?.message); }
   }
 
@@ -142,7 +143,7 @@ export function twoFactor({ HTTPError, json, now, hmac, digest, equal, send, lim
     const codes = await newRecoveryCodes(env, active.customer.id);
     // Other devices signed in before two-factor was on are signed out.
     await env.DB.prepare('DELETE FROM sessions WHERE customer_id=? AND token_hash<>?').bind(active.customer.id, await digest(active.token)).run();
-    await notify(env, active.customer, 'Two-factor sign-in is on', 'Two-factor sign-in is now on for your VFTech account. After you sign in, we\'ll ask for the code from your authenticator app. Keep your recovery codes somewhere safe: each one works once if you lose your phone.');
+    await notify(env, active.customer, '2fa-on');
     return json({ enabled: true, recoveryCodes: codes });
   }
   /** POST /api/account/2fa/disable {code | recoveryCode} */
@@ -153,7 +154,7 @@ export function twoFactor({ HTTPError, json, now, hmac, digest, equal, send, lim
       env.DB.prepare('UPDATE customers SET totp_secret=NULL,totp_pending=NULL,totp_pending_at=NULL,totp_enabled_at=NULL,totp_last_step=0 WHERE id=?').bind(active.customer.id),
       env.DB.prepare('DELETE FROM recovery_codes WHERE customer_id=?').bind(active.customer.id),
     ]);
-    await notify(env, active.customer, 'Two-factor sign-in is off', 'Two-factor sign-in is now off for your VFTech account. You can turn it back on from your account page at any time.');
+    await notify(env, active.customer, '2fa-off');
     return json({ enabled: false });
   }
   /** POST /api/account/2fa/recovery-codes {code | recoveryCode}: ten new codes; the old ones stop working. */
@@ -161,7 +162,7 @@ export function twoFactor({ HTTPError, json, now, hmac, digest, equal, send, lim
     if (!(await enabledFor(env, active.customer.id))) throw new HTTPError(409, 'Turn on two-factor sign-in first.');
     await guarded(env, active.customer.id, input);
     const codes = await newRecoveryCodes(env, active.customer.id);
-    await notify(env, active.customer, 'New recovery codes for your VFTech account', 'You made new two-factor recovery codes. The old ones no longer work.');
+    await notify(env, active.customer, '2fa-new-codes');
     return json({ recoveryCodes: codes });
   }
   /** After sign-in, for a session waiting on two-factor: true once a code or recovery code checks out. */
@@ -169,7 +170,7 @@ export function twoFactor({ HTTPError, json, now, hmac, digest, equal, send, lim
     const how = await guarded(env, customer.id, input);
     if (how === 'recovery') {
       const left = (await env.DB.prepare('SELECT COUNT(*) AS n FROM recovery_codes WHERE customer_id=? AND used_at IS NULL').bind(customer.id).first())?.n ?? 0;
-      await notify(env, customer, 'A recovery code was used', `Someone signed in to your VFTech account with a recovery code. ${left} unused code${left === 1 ? '' : 's'} left. If you've lost your phone, turn two-factor off and on again from your account page to move it to a new one.`);
+      await notify(env, customer, '2fa-code-used', { left: String(left), codes_word: left === 1 ? 'code' : 'codes' });
     }
     return how;
   }

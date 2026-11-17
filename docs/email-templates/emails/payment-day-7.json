@@ -1,0 +1,27 @@
+{
+  "trigger": "Unpaid for 7 days (billing.js dunning)",
+  "direction": "outbound",
+  "subject": "Payment needed for your {{plan}} plan",
+  "preheader": "Work on your plan is paused until it is paid.",
+  "footer_note": "You're getting this because you have a VF Tech plan. Billing emails like this one can't be turned off.",
+  "body": [
+    "Hi {{name}},",
+    "We still haven't been able to collect payment for your {{plan}} plan, so work on your plan is paused until it's paid.",
+    {
+      "button": {
+        "label": "Pay or update your card",
+        "url": "{{link_account}}",
+        "text": "Sign in to pay what's owed or update your card: {{link_account}}"
+      }
+    },
+    "If it's still unpaid on {{suspends}}, your plan is suspended.",
+    {
+      "signoff": true
+    }
+  ],
+  "sample": {
+    "name": "Pat",
+    "plan": "Standard",
+    "suspends": "December 17, 2026"
+  }
+}

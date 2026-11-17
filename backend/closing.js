@@ -19,7 +19,7 @@ export function closing({ HTTPError, json, now, hmac, code, equal, send, codeSec
     await env.DB.prepare('INSERT INTO auth_challenges (id,email,name,code_hash,expires_at,created_at) VALUES (?,?,?,?,?,?)')
       .bind(id, address, 'close-account', await hmac(env, `close:${id}:${address}:${value}`), timestamp + codeSeconds, timestamp).run();
     try {
-      await send(env, { to: [address], subject: 'Your code to close your VFTech account', text: `Your code to close your VFTech account is ${value}.\n\nIt expires in ten minutes and can be used once. If you didn't ask to close your account, ignore this email and nothing will change. Never share your code.` }, `close-code-${id}`);
+      await send(env, { to: [address], template: 'close-code', vars: { code: value } }, `close-code-${id}`);
     } catch (error) {
       await env.DB.prepare('DELETE FROM auth_challenges WHERE id=?').bind(id).run();
       throw error;
@@ -100,7 +100,7 @@ export function closing({ HTTPError, json, now, hmac, code, equal, send, codeSec
       for (const method of methods) await stripe(env, 'POST', `payment_methods/${method.id}/detach`, {});
     }
     try {
-      await send(env, { to: [customer.email], subject: 'Your VFTech account is closed', text: `Hi ${customer.name || 'there'},\n\nYour VFTech account is now closed. We've deleted your profile, sign-ins and requests. Your invoices stay with our payment provider as tax records, and no further charges will be made.\n\nYou're welcome back any time: signing in with this email again starts a new account.\n\nVF Tech\nkevinvf@vftech.io` }, `closed-${customerId}`);
+      await send(env, { to: [customer.email], template: 'account-closed', vars: { name: customer.name || 'there' } }, `closed-${customerId}`);
     } catch (error) { console.error('closing email', customerId, error?.message); }
     await env.DB.batch([
       env.DB.prepare('DELETE FROM sessions WHERE customer_id=?').bind(customerId),

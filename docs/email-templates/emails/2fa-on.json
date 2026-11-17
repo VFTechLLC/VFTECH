@@ -1,0 +1,25 @@
+{
+  "trigger": "Two-factor turned on (twofactor.js)",
+  "direction": "outbound",
+  "subject": "Two-factor sign-in is on",
+  "preheader": "Keep your recovery codes somewhere safe.",
+  "footer_note": "You're getting this because you have a VF Tech account. Account emails like this one can't be turned off.",
+  "body": [
+    "Hi {{name}},",
+    "Two-factor sign-in is now on for your VFTech account. After you sign in, we'll ask for the code from your authenticator app. Keep your recovery codes somewhere safe: each one works once if you lose your phone.",
+    "If this wasn't you, reply to this email or use the Can't sign in? page straight away.",
+    {
+      "button": {
+        "label": "Can't sign in?",
+        "url": "{{link_help}}",
+        "text": "{{link_help}}"
+      }
+    },
+    {
+      "signoff": true
+    }
+  ],
+  "sample": {
+    "name": "Pat"
+  }
+}
